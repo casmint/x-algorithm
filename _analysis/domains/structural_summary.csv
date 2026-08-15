@@ -1,0 +1,13 @@
+flag,files
+is_symlink,1
+is_test,58
+contains_embedded_tests,170
+is_fixture,4
+is_example,28
+is_generated,17
+is_vendor,0
+is_schema,49
+is_doc,11
+is_config,126
+is_build,100
+is_asset,1

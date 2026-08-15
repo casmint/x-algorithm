@@ -1,0 +1,64 @@
+{
+  "snapshot_name": "2026-08-15_c65aa17",
+  "source_archive_uploaded_name": "x-algorithm-main(2).zip",
+  "source_archive_sha256": "8aa4dcb51127236cea4482460e35b5bf73e3eb7f5286720b997365cb5192c1e8",
+  "source_archive_size_bytes": 3500526,
+  "upstream_repository": "xai-org/x-algorithm",
+  "upstream_branch_at_capture": "main",
+  "upstream_commit_sha": "c65aa179db7bdd61e2c2821eac87f208a105c053",
+  "upstream_commit_timestamp_utc": "2026-08-14T20:55:37Z",
+  "upstream_git_tree_sha1": "1d4c89941bfcd2ea3aab7c780f7447342e304e42",
+  "local_reconstructed_git_tree_sha1": "1d4c89941bfcd2ea3aab7c780f7447342e304e42",
+  "tree_match_verified": true,
+  "file_count": 2016,
+  "total_uncompressed_bytes": 13452561,
+  "utf8_text_file_count": 2014,
+  "approx_total_text_lines": 379995,
+  "top_level_directory_count": 25,
+  "top_level_directories": [
+    "abuse-enforcement-service",
+    "adult-content",
+    "agatha",
+    "bdsm",
+    "botmaker",
+    "botmaker-rules",
+    "candidate-pipeline",
+    "clip",
+    "docs",
+    "grox",
+    "home-mixer",
+    "media-model-proxy",
+    "phoenix",
+    "phoenix-rankall",
+    "phoenix-rankall-strato",
+    "pnsfwmedia",
+    "safety-label-user-agg",
+    "scarecrow",
+    "simclusters",
+    "thunder",
+    "under-the-hood",
+    "user-cred-v2",
+    "visibility-filtering",
+    "visibility-filtering-client",
+    "vm-ranker"
+  ],
+  "top_level_files": [
+    "CODE_OF_CONDUCT.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "notes": [
+    "The uploaded GitHub ZIP has no .git metadata.",
+    "To verify the snapshot, a temporary Git index was reconstructed from the archive contents; git write-tree exactly matched the upstream commit tree SHA.",
+    "Heuristic columns such as generated_hint/test_hint are indexing aids, not factual conclusions.",
+    "Snapshot census treats Git symlinks as symlinks rather than dereferencing their targets; the archive contains one symlink."
+  ],
+  "symlink_count": 1,
+  "symlinks": [
+    {
+      "path": "media-model-proxy/src/test/resources/test_decider_base.yml",
+      "target": "../../../config/decider.yml",
+      "git_mode": "120777"
+    }
+  ]
+}

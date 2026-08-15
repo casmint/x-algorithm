@@ -1,0 +1,25 @@
+component,audit_domains,files,lines,documented_role
+botmaker,D11;D16;D19;D17;D18,492,61527,Rule language/compiler/runtime used by Scarecrow.
+phoenix,D16;D15;D03;D05;D19;D17;D18,303,117903,"Phoenix retrieval and ranking model code, training, inference, serving, and reference tooling."
+simclusters,D03;D16;D15;D17,232,35797,Cluster-based out-of-network candidate discovery.
+home-mixer,D08;D01;D16;D12;D07;D18;D03;D05;D17;D06;D02,216,40071,"Builds the For You feed: pipeline stages, scoring weights, and calls to other request-path systems."
+grox,D09;D16;D17;D11,165,14975,Post text/media understanding and classification/embedding flows.
+media-model-proxy,D09;D16;D19;D17;D18,98,4166,Serving layer for image/video understanding models.
+agatha,D10;D16;D19;D15,90,5629,Offline account labeling/features from blocks/reports/spam/adult-related signals.
+botmaker-rules,D11;D17,73,1578,Published Scarecrow/Botmaker rules; repository notes some rules are omitted.
+visibility-filtering,D12;D16;D17;D18,63,15861,Central policy evaluation deciding show/drop/interstitial-like visibility outcomes.
+bdsm,D10;D16;D17;D19;D18;D15,46,10004,Behavior-sequence modeling for inauthentic/abusive account behavior.
+phoenix-rankall,D04;D16;D19;D17;D18,35,7653,Maintains the post index queried by Phoenix retrieval.
+scarecrow,D11;D16,32,3231,Event-driven labeling system embedding Botmaker.
+abuse-enforcement-service,D13;D16;D17;D18,31,12622,"Model-score-driven account/post labeling, challenges, suspensions/enforcement."
+under-the-hood,D14;D16;D17,26,4138,Collects/serves per-account label transparency reports.
+thunder,D02;D16;D17;D18,24,31455,In-memory recent-post source for accounts the viewer follows.
+clip,D09;D19;D17;D15,20,2856,Training/model code for image-text embeddings consumed by media classifiers.
+phoenix-rankall-strato,D04;D12;D16;D17,17,1699,"Event/admission layer deciding index placement, including visibility consultation."
+candidate-pipeline,D01;D16;D18,11,1234,Generic framework for source/hydrator/filter/scorer/selector/side-effect pipeline stages.
+vm-ranker,D06;D16;D18,10,1302,DPP-based reranking/diversity service called after scoring.
+user-cred-v2,D10;D16;D17,9,805,Graph/PageRank-derived per-account credibility mass/score.
+adult-content,D09;D19;D15;D17,8,482,Adult-media classifier training/calibration utilities.
+visibility-filtering-client,D12;D16,7,2999,Client/types used by callers of Visibility Filtering.
+safety-label-user-agg,D11;D16,3,617,Aggregates post safety labels to user-level labels.
+docs,D00;D05;D17,1,495,Published explanatory example(s) of algorithm changes.

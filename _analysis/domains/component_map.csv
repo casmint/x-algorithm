@@ -1,0 +1,27 @@
+component,documented_role,files,lines,bytes,symlinks,audit_domains,cross_domain,verification_status
+botmaker,Rule language/compiler/runtime used by Scarecrow.,492,61527,2171276,0,D11;D16;D19;D17;D18,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+phoenix,"Phoenix retrieval and ranking model code, training, inference, serving, and reference tooling.",303,117903,4301729,0,D16;D15;D03;D05;D19;D17;D18,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+simclusters,Cluster-based out-of-network candidate discovery.,232,35797,1329271,0,D03;D16;D15;D17,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+home-mixer,"Builds the For You feed: pipeline stages, scoring weights, and calls to other request-path systems.",216,40071,1355098,0,D08;D01;D16;D12;D07;D18;D03;D05;D17;D06;D02,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+grox,Post text/media understanding and classification/embedding flows.,165,14975,553989,0,D09;D16;D17;D11,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+media-model-proxy,Serving layer for image/video understanding models.,98,4166,158918,1,D09;D16;D19;D17;D18,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+agatha,Offline account labeling/features from blocks/reports/spam/adult-related signals.,90,5629,193734,0,D10;D16;D19;D15,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+botmaker-rules,Published Scarecrow/Botmaker rules; repository notes some rules are omitted.,73,1578,51893,0,D11;D17,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+visibility-filtering,Central policy evaluation deciding show/drop/interstitial-like visibility outcomes.,63,15861,502291,0,D12;D16;D17;D18,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+bdsm,Behavior-sequence modeling for inauthentic/abusive account behavior.,46,10004,341509,0,D10;D16;D17;D19;D18;D15,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+phoenix-rankall,Maintains the post index queried by Phoenix retrieval.,35,7653,256889,0,D04;D16;D19;D17;D18,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+scarecrow,Event-driven labeling system embedding Botmaker.,32,3231,121454,0,D11;D16,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+abuse-enforcement-service,"Model-score-driven account/post labeling, challenges, suspensions/enforcement.",31,12622,419165,0,D13;D16;D17;D18,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+under-the-hood,Collects/serves per-account label transparency reports.,26,4138,149024,0,D14;D16;D17,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+thunder,In-memory recent-post source for accounts the viewer follows.,24,31455,1068763,0,D02;D16;D17;D18,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+clip,Training/model code for image-text embeddings consumed by media classifiers.,20,2856,91946,0,D09;D19;D17;D15,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+phoenix-rankall-strato,"Event/admission layer deciding index placement, including visibility consultation.",17,1699,59933,0,D04;D12;D16;D17,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+candidate-pipeline,Generic framework for source/hydrator/filter/scorer/selector/side-effect pipeline stages.,11,1234,39922,0,D01;D16;D18,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+vm-ranker,DPP-based reranking/diversity service called after scoring.,10,1302,39668,0,D06;D16;D18,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+user-cred-v2,Graph/PageRank-derived per-account credibility mass/score.,9,805,25789,0,D10;D16;D17,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+adult-content,Adult-media classifier training/calibration utilities.,8,482,13275,0,D09;D19;D15;D17,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+visibility-filtering-client,Client/types used by callers of Visibility Filtering.,7,2999,104374,0,D12;D16,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+[root],Repository-level docs/license and architecture explanation.,3,684,56874,0,D00,NO,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+safety-label-user-agg,Aggregates post safety labels to user-level labels.,3,617,19611,0,D11;D16,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+docs,Published explanatory example(s) of algorithm changes.,1,495,19293,0,D00;D05;D17,YES,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED
+pnsfwmedia,Adult-media classifier combining media embeddings with account-level signals.,1,212,6873,0,D09,NO,DOCUMENTED_ROLE_NOT_YET_IMPLEMENTATION_VERIFIED

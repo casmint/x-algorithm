@@ -1,0 +1,21 @@
+domain_id,domain_name,primary_files,assigned_files_including_cross_domain,assigned_lines_including_cross_domain
+D00,Repository metadata & explanatory docs,4,4,1179
+D01,Request pipeline & orchestration,110,227,41305
+D02,In-network retrieval,25,25,31577
+D03,Out-of-network retrieval,274,419,107260
+D04,Retrieval index & admission,52,52,9352
+D05,Ranking & score construction,121,250,105877
+D06,"Selection, reranking & diversity",15,15,1848
+D07,Feed eligibility & non-VF filtering,29,39,7447
+D08,"Blending, ads & non-post insertion",17,20,5127
+D09,Content & media understanding,292,292,22691
+D10,"Account behavior, credibility & reputation signals",145,145,16438
+D11,"Label production, rules & aggregation",600,686,73607
+D12,Visibility policy & safety filtering,70,92,22958
+D13,Abuse enforcement & account actions,31,31,12622
+D14,Transparency & user-facing reporting,26,26,4138
+D15,"Model training, evaluation & artifact production",61,197,53350
+D16,"Data models, storage & service integration",99,1754,335059
+D17,"Configuration, experiments & runtime controls",15,220,19630
+D18,"Observability, side effects & event recording",18,47,9204
+D19,"Build, packaging & reproducibility",12,155,20360
