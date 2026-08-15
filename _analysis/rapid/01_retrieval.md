@@ -44,13 +44,16 @@ outside of any single user's request, by a separate ingestion pipeline
 (`phoenix-rankall`) that consumes post-creation and favorite events off Kafka. Two things
 control admission: the type of event (a post being created always tries to enter one
 index; a post crossing favorite-count thresholds — 1, 32 — tries to enter others), and a
-set of hard exclusions applied before any index write happens at all: **community posts,
-replies, and retweets are never admitted to the mainstream Phoenix indices, period** —
-regardless of how many favorites they get. Posts that fail visibility/NSFW checks are also
-dropped from the mainstream indices (NSFW posts with video get diverted into a
-segregated NSFW-video index instead). This means Phoenix retrieval structurally cannot
-surface a reply or a retweet as a candidate — those can only reach the feed through
-Thunder, SimClusters, or TweetMixer.
+set of hard exclusions applied before the **mainstream** index-build branches run:
+**community posts, replies, and retweets are excluded from `post_creation`/`1fav`/
+`32fav`/topic/`video`/`imagine` admission**, regardless of how many favorites they get.
+Posts that fail visibility/NSFW checks are also dropped from those mainstream indices
+(NSFW posts with video get diverted into a segregated NSFW-video index instead). A
+narrower, earlier branch (`search_unfiltered`, favorite-triggered only) excludes
+community posts and retweets but **not** replies, and is not one of the snapshot windows
+this report traced — whether it feeds any retrieval path Home Mixer actually queries is
+unresolved (see Phoenix section and findings below), so this report does not claim
+replies are categorically absent from Phoenix retrieval end to end.
 
 The other four wired sources matter too, and it would be misleading to describe
 retrieval as "Thunder + SimClusters + Phoenix" without them. **TweetMixerSource** and
@@ -131,7 +134,7 @@ UNKNOWN (S17's territory, consistent with S01).
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `ThunderSource` | IN | Looks up recent posts by followed-author IDs from Thunder's in-memory index; recency-sorted, capped per author | `!query.has_cached_posts` only | 1200 (600 if video request); Thunder-side hard caps `MAX_POSTS_TO_RETURN`/`MAX_VIDEOS_TO_RETURN` | No (no score field set) | No | Yes (following list passed in request) | **No** — no `in_network_only` check in `ThunderSource::enable` | Yes | Thunder gRPC service (or CAPI proxy) | `Err` → 0 candidates this request; other sources unaffected | DIRECT |
 | `TweetMixerSource` | OON | Calls external `TweetMixerClient.get_recommendations`; self-applies a 48h age filter | `EnableTweetMixerSource` (**default `false`**) `&& !in_network_only && !has_cached_posts` | 800 | No | Unknown (client internals external) | No | Yes | Yes | `TweetMixerClient` (external crate, mechanism not in this snapshot) | `Err` → 0 candidates | DIRECT (gating); UNKNOWN (internals) |
-| `SimclustersSource` | OON | ANN cosine-similarity retrieval seeded by the viewer's recent engagement-signal tweet IDs | `EnableSimclustersSource` (default `true`) `&& !in_network_only && !has_cached_posts &&` viewer has ≥1 engagement signal | 800 interleaved cap; 10,000 per-request ANN budget across signals | No (ANN score used only internally for a >0.5 threshold + ordering, not retained) | No | No (keyed by follow list only indirectly, via being in-network eligible at all) | Yes | Yes | SimClusters ANN gRPC service (Wily service discovery) | `Err` for a given signal_id → 0 candidates for that signal; other signals unaffected | DIRECT |
+| `SimclustersSource` | OON | ANN cosine-similarity retrieval seeded by the viewer's recent engagement-signal tweet IDs | `EnableSimclustersSource` (default `true`) `&& !in_network_only && !has_cached_posts &&` viewer has ≥1 engagement signal | 800 interleaved cap; 10,000 per-request ANN budget across signals | No (ANN score used only internally for a >0.5 threshold + ordering, not retained) | No | No (keyed by follow list only indirectly, via being in-network eligible at all) | Yes | Yes | SimClusters ANN gRPC service (Wily service discovery) | Any single signal's `Err` aborts the whole source via `result?` inside the per-signal results loop → **0 candidates for the entire request**, not just that signal | DIRECT |
 | `PhoenixSource` | OON | `RetrievalDispatch` (prod client + optional xDS path) queries the Phoenix retrieval index for the resolved inference cluster | `EnablePhoenixSource` (default `true`) `&& (!is_topic_request \|\| is_bulk_topic_request) && !in_network_only && !has_cached_posts` | 1000 (pre `quality_factor::apply`, an external multiplier) | No | **Yes** | No | Yes | Yes | Phoenix retrieval client (xDS/prod gRPC) + external xrecsys serving stack | `Err` → 0 candidates (whole call fails together) | DIRECT (gating/mechanism); UNKNOWN (xrecsys internals) |
 | `PhoenixTopicsSource` | OON | Same `RetrievalDispatch` mechanism, topic-entity-filtered, topic-specific inference cluster | `is_topic_request() && !is_bulk_topic_request() && !in_network_only && !has_cached_posts` (no separate `Enable*` flag found) | 1000 (same param as `PhoenixSource`) | No | Yes | No | Yes | Yes | Same as `PhoenixSource` | Same | DIRECT |
 | `PhoenixMOESource` | OON | Same `RetrievalDispatch` mechanism, MOE-specific inference cluster | `EnablePhoenixMOESource` (**default `false`**) `&& (!is_topic_request \|\| is_bulk_topic_request) && !in_network_only && !has_cached_posts` | 200 | No | Yes | No | Yes | Yes | Same as `PhoenixSource` | Same | DIRECT |
@@ -276,10 +279,14 @@ nsfw_author=true` — gated on the same `EnableSimclustersSource` flag.
 **Failure/external dependency**: the client (`home-mixer/clients/simclusters_ann_client.rs`)
 resolves the `simclusters-ann` service via Wily DNS at boot (hard `Err` if 0 endpoints
 found), applies a 600ms per-request timeout, and wraps the channel in a retrying client
-for idempotent requests. A per-seed request failure only zeroes out that seed's
-candidates (the seeds run as independent futures via `join_all`); it does not fail the
-whole source unless *all* seeds fail (still governed by S01's framework-level "one
-`Err` = zero candidates from this source" semantics for the source as a whole).
+for idempotent requests. At request time, `source()` runs all per-signal ANN lookups
+concurrently via `join_all`, but then iterates the results with `let candidates =
+result?;` inside a plain `for` loop (`simclusters_source.rs:108-112`) — the `?` returns
+early on the **first** `Err` encountered, discarding any other signals' already-fetched
+results too. So a single failed signal aborts `SimclustersSource::source` as a whole,
+which — per S01's framework-level "a failing source contributes zero candidates"
+semantics — means **zero SimClusters candidates for the entire request**, not just a
+reduced set missing that one signal's contribution.
 
 ## Phoenix retrieval index / rankall admission
 
@@ -302,8 +309,21 @@ independently of Home Mixer.
   doesn't generate an indexing event on every single favorite, only when its count crosses
   the next power of two.
 
-**Admission filter** (`phoenix-rankall-strato/columns/phoenix_rank_all/phoenixRankAllCandidateProcessor.strato:381-487`),
-applied to every event before any index write:
+**Admission has two branches with different exclusion rules**
+(`phoenix-rankall-strato/columns/phoenix_rank_all/phoenixRankAllCandidateProcessor.strato:381-487`).
+
+*Branch 1 — `search_unfiltered` (favorite events only, runs first, before the reply
+check)*: `if (eventSource == Fav && !isCommunityPost && !isRepost) { buildSearchUnfilteredIndex(...) }`
+(`phoenixRankAllCandidateProcessor.strato:433-435`) — this excludes community posts and
+retweets/reposts, but **is evaluated before `isReply` is computed and does not itself
+exclude replies**. `search_unfiltered` is not among the snapshot windows
+`phoenix-rankall/src/config/mod.rs` builds for the `Main`/`Topic`/`Sid` pipeline variants
+this report traced (`config/mod.rs:139-191`), so whether it is written to a
+retrieval-relevant index/store at all, and whether any live Phoenix retrieval path Home
+Mixer queries can consume it, is **UNKNOWN** from this snapshot.
+
+*Branch 2 — mainstream indices*, evaluated after `search_unfiltered`, applied to every
+event before any of the following index-build functions run:
 
 1. Post metadata/author lookup fails → dropped (`numMissingMetadata`/`numMissingAuthorId`).
 2. **Community posts → always dropped**, regardless of engagement (`numSkippedCommunity`).
@@ -320,10 +340,14 @@ applied to every event before any index write:
    `video` if applicable) and a metadata dump.
 
 **Post creation alone is sufficient** for the `post_creation` index — no engagement
-required — but is still subject to the community/reply/retweet/visibility exclusions
-above. This means **Phoenix retrieval (all three `Phoenix*Source`s) structurally cannot
-surface a reply or a retweet as a candidate, ever** — those only reach the feed via
-Thunder, SimClusters, or TweetMixer.
+required — but is still subject to branch 2's community/reply/retweet/visibility
+exclusions. DIRECT: replies, retweets, and community posts are excluded from every
+mainstream index-build branch/window this report traced (`post_creation`, `1fav`,
+`32fav`, topic variants, `video`, `imagine`). DIRECT, narrower: the `search_unfiltered`
+branch excludes community posts and retweets but not replies. This report does **not**
+claim "`PhoenixSource` can never return a reply" or "replies can only ever enter via
+Thunder/SimClusters/TweetMixer" — that would require proving the live Phoenix retrieval
+serving stack cannot consume `search_unfiltered`, which this snapshot does not show.
 
 **Index storage and windows** (`phoenix-rankall/src/config/mod.rs:139-191`): the `Main`
 pipeline variant (`phoenix-rankall/src/processor/main_processor.rs`) writes per-index-name
@@ -373,11 +397,19 @@ and `home-mixer/side_effects/redis_post_candidate_cache_side_effect.rs`:
   **all live retrieval**, not just some of it. S01 also separately established
   `BidirectionalFollowHydrator` and `PhoenixScorer` both skip on `has_cached_posts`, so
   cached requests skip most of hydration and scoring too, not only retrieval.
-- **Rescoring**: candidates come back with their original `weighted_score` already set
-  (from when they were first computed) — `CachedPostsSource` is a verbatim pass-through
-  with no rescoring inside the source itself; whether later stages (post-selection
-  hydrators/filters, which are not gated on `has_cached_posts`) still run against them
-  was not independently re-verified here beyond what S01 already established.
+- **Rescoring**: `CachedPostsSource` itself is a verbatim pass-through — candidates come
+  back with their original `weighted_score` already set, no rescoring inside the source.
+  Downstream, `PhoenixScorer::enable` explicitly returns `false` when
+  `query.has_cached_posts` (`home-mixer/scorers/phoenix_scorer.rs:65-68`), so cached
+  candidates reuse their previously-computed Phoenix model prediction fields rather than
+  getting a fresh inference call. But `RankingScorer::enable` and `VMRanker::enable` gate
+  only on `EnableRanking`/`EnableVMRanker` respectively (`ranking_scorer.rs:734-736`,
+  `vm_ranker.rs:24-26`) — **neither checks `has_cached_posts`** — so on the current
+  checked-in wiring, cache mode bypasses live retrieval and fresh Phoenix model inference,
+  while later local weighting/reranking (`RankingScorer`, `VMRanker`) may still execute
+  again against the reused Phoenix fields. Whether that reruns with the *current* request's
+  feature-switch weights, and what that means for the final order of a cached response,
+  is resolved precisely in the ranking macro (`_analysis/rapid/02_ranking.md`), not here.
 - **Staleness**: up to 180 seconds stale by construction (Redis TTL), and reflects
   whatever candidate pool existed at the time of the *original* request — no new posts
   from any of the seven sources can appear during a cache-mode response.
@@ -404,10 +436,13 @@ body directly (not inferred from names):
 | `PhoenixMOESource` | **Yes** |
 | `CachedPostsSource` | n/a (orthogonal gate) |
 
-In other words: **every out-of-network source is uniformly disabled by
-`in_network_only`; Thunder (the in-network source) is the only one of the seven that
-never checks it at all** — consistent with what "in-network-only" should mean, but now
-confirmed directly rather than inferred, closing S01-F008's stated gap.
+In other words: **among the six live retrieval sources, every out-of-network one is
+uniformly disabled by `in_network_only`; Thunder is the only one not disabled by it.**
+`CachedPostsSource` is the structurally separate cache-only path — it does not gate
+directly on `in_network_only` either, but its Redis key incorporates `in_network_only`
+upstream (via `CachedPostsQueryHydrator`'s `cached_posts_key`), so cached and
+non-cached-mode candidate sets never mix across that flag. This is now confirmed
+directly rather than inferred, closing S01-F008's stated gap.
 
 ## Failure/degraded modes
 
@@ -419,7 +454,7 @@ never fails the request):
 | Thunder gRPC unavailable | `ThunderSource` → 0 candidates this request; other 6 sources unaffected; in-network content entirely absent from that response unless SimClusters/TweetMixer happen to surface a followed author's post out-of-network-style (they don't specifically target followed authors, so this is not a real substitute) |
 | Thunder CAPI client absent at boot | No request-time effect — falls back to direct-channel path transparently (S01-F013, confirmed here) |
 | SimClusters ANN client / Wily DNS down at boot | Constructor returns hard `Err`; boot-time failure (fail-hard, consistent with S01's boot-time asymmetry finding) |
-| SimClusters ANN request timeout/error (per seed) | That seed contributes 0 candidates; other seeds' results unaffected (`join_all` over independent futures) |
+| SimClusters ANN request timeout/error (any single signal) | Aborts `SimclustersSource::source` entirely via early-return `?` on the first `Err` seen while iterating `join_all`'s results — **0 candidates from SimClusters for the whole request**, not a partial/reduced set |
 | Phoenix retrieval client / xDS path failure | Whole `PhoenixSource`/`PhoenixTopicsSource`/`PhoenixMOESource` call fails together → 0 candidates from that source for this request; exact xDS-vs-prod fallback retry semantics live in the external `RetrievalDispatch`/`retrieve_with_fallback` implementation, not vendored in this snapshot — **UNKNOWN** internals, only the call site and `max_retries`/`enable_fallback` params are visible here |
 | Phoenix rankall / SID lookup service down | Indexing record is still written with an empty SID (not dropped), retried later by a periodic backfill loop — a lag/staleness effect on retrieval eligibility, not a hard failure |
 | Phoenix rankall ingestion pipeline lagging or down | New posts/favorite-threshold crossings stop entering the index until it catches up — **other sources (Thunder, SimClusters, TweetMixer) are unaffected** and can still surface the same post through their own independent mechanisms; Phoenix retrieval's view of "what's indexable" and Thunder/SimClusters' view are entirely independent systems with no shared eligibility state |
@@ -437,22 +472,34 @@ never fails the request):
   (`EnableTweetMixerSource=false`, `EnablePhoenixMOESource=false`) in the checked-in
   source, meaning a reader of the source tree alone would overestimate how much OON
   traffic they carry absent knowledge of the live feature-switch state (UNKNOWN here).
-- The repository's README does not mention that replies and retweets are categorically
-  excluded from Phoenix's retrieval index at ingestion time — this is only visible from
-  the `phoenix-rankall-strato` admission logic, not from anything in `home-mixer/`.
+- The repository's README does not mention that replies and retweets are excluded from
+  Phoenix's *mainstream* retrieval indices at ingestion time — this is only visible from
+  the `phoenix-rankall-strato` admission logic, not from anything in `home-mixer/`; nor
+  does it mention the narrower `search_unfiltered` branch that admits replies.
 
 ## Material findings
 
-1. **Phoenix retrieval structurally excludes replies, retweets, and community posts —
-   not a scoring penalty, an ingestion-time admission wall.**
-   Significance: HIGH. Evidence class: DIRECT.
-   Claim: `phoenixRankAllCandidateProcessor.strato`'s `executeOp` unconditionally routes
-   `isReply`/`isRepost`/`isCommunityPost` posts to a skip counter before any index-build
-   function runs, for both `Fav` and `PostCreation` event sources.
-   Source: `phoenix-rankall-strato/columns/phoenix_rank_all/phoenixRankAllCandidateProcessor.strato:429-479`.
+1. **Phoenix retrieval's mainstream indices exclude replies, retweets, and community
+   posts at ingestion — an admission wall, not a scoring penalty — but a narrower,
+   earlier favorite-only branch (`search_unfiltered`) excludes only community posts and
+   retweets, not replies.**
+   Significance: HIGH. Evidence class: DIRECT (both branches' exclusion sets, read
+   directly); UNKNOWN (whether `search_unfiltered` feeds any live retrieval path).
+   Claim: `phoenixRankAllCandidateProcessor.strato`'s `executeOp` routes
+   `isReply`/`isRepost`/`isCommunityPost` posts to a skip counter before any *mainstream*
+   index-build function runs (`post_creation`, `1fav`, `32fav`, topic variants, `video`,
+   `imagine`), for both `Fav` and `PostCreation` event sources. A separate, earlier branch
+   for favorite events only, `buildSearchUnfilteredIndex`, checks `!isCommunityPost &&
+   !isRepost` but runs before `isReply` is computed and does not exclude replies.
+   `search_unfiltered` is absent from the snapshot window configs
+   (`phoenix-rankall/src/config/mod.rs:139-191`) this report traced.
+   Source: `phoenix-rankall-strato/columns/phoenix_rank_all/phoenixRankAllCandidateProcessor.strato:429-479`
+   (mainstream exclusions), `:433-435` (`search_unfiltered` branch).
    Caveat: this governs only the Phoenix-index-backed sources (`PhoenixSource`,
-   `PhoenixTopicsSource`, `PhoenixMOESource`); Thunder and SimClusters have no such
-   exclusion and can and do surface replies/retweets.
+   `PhoenixTopicsSource`, `PhoenixMOESource`) for the mainstream indices specifically;
+   Thunder and SimClusters have no such exclusion and can and do surface replies/retweets;
+   whether `search_unfiltered` is itself queryable by any live Phoenix retrieval path is
+   unresolved and should not be assumed either way.
 
 2. **SimClusters retrieval is item-to-item (recent-engagement-seeded), not a static
    viewer interest profile.**
@@ -577,6 +624,12 @@ covering the old S05/S08 territory):
 - `PhoenixScorer` → `RankingScorer` → `VMRanker`'s exact score-field handoff — S01
   established the stage order and `VMRanker`'s whole-call failure mode but flagged the
   field-by-field consequence as STRONG_INFERENCE, not DIRECT (S01-F012).
+- **Precisely what happens on a cached (`has_cached_posts`) request inside all three
+  scorers**: this report established only the `enable()` gates (`PhoenixScorer` skips,
+  `RankingScorer`/`VMRanker` do not check `has_cached_posts` at all) — not what
+  `RankingScorer`/`VMRanker` actually do when they run against reused Phoenix prediction
+  fields instead of freshly-inferred ones, or whether that can change a cached response's
+  final order relative to the original request that populated the cache.
 - Whether/how a candidate's originating source (Thunder vs. SimClusters vs. Phoenix
   retrieval vs. TweetMixer) factors into scoring at all, given none of them pass a
   score forward — is `served_type` itself a scoring feature, and if so how heavily
