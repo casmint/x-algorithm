@@ -40,13 +40,17 @@ After the weighted sum, `RankingScorer` layers on several independent adjustment
 same author already rank above it in this batch (asymptoting toward a floor, not zero);
 an **out-of-network discount** (0.75× by default) applied to anything not from a followed
 author — and, by current checked-in default, *also* applied to in-network replies and
-retweets, which is a genuinely non-obvious detail; a **bidirectional-follow boost** that
-adds extra weight to the reply and dwell heads specifically for original (non-reply,
-non-retweet) posts from someone who mutually follows the viewer; and a **cold-start
+retweets, which is a genuinely non-obvious detail; a **bidirectional-follow boost**
+mechanism that can add extra weight to the reply and dwell heads specifically for
+original (non-reply, non-retweet) posts from someone who mutually follows the viewer —
+under checked-in defaults this actually adds +15.0 to the reply weight but +0.0 to the
+dwell weight, so today only the reply boost has any effect; and a **cold-start
 mechanism** that, once per request, finds the best eligible low-follower/low-impression
-post and forcibly floors its score so it lands around the 16th ranking slot, guaranteeing
-new/small accounts get *some* visibility regardless of how the model would otherwise
-have scored them.
+post and raises its score to at least whatever score currently occupies the 16th-ranked
+slot in this batch. That is a floor on the *pre-adjustment* score at that point in the
+pipeline, not a guarantee of a final feed position — author-diversity and OON
+adjustments that run afterward, and VMRanker after that, can still move the boosted
+candidate up or down from wherever this floor placed it.
 
 There is also a second, entirely different scoring mode — **dwell-regret** — selectable
 by a `ValueModelMode` parameter, plus a **gated** variant that uses a small linear model
@@ -402,15 +406,24 @@ uniformly.
   are active via `PhoenixMoeCodivertViewerIs{Control,Treatment}`, default both false →
   viewer defaults to the "Holdout" arm) not already ranking in the top
   `LowImpressionsMaxPositionRatio` fraction of nonzero-scored candidates. The chosen
-  candidate's score is floored (not replaced, `max()`'d) at a score sampled from
-  ranking slot range `[ColdStartSlotMin, ColdStartSlotMax)` = **[15, 16)** under checked-in
-  defaults — i.e., a single slot, position 15 (0-indexed). Selection is by raw score
-  (`pick_by_score`) unless `EnableColdStartThompsonSampling` (default **off**) enables a
-  Beta-distribution Thompson-sampling pick over `view_count`/`fav_count` instead. This
-  directly answers "what happens for a new/small author's post": under checked-in
-  defaults, at most one such post per request gets pulled up to roughly the 16th
-  position if nothing else already ranks it that high, regardless of the model's raw
-  score.
+  candidate's score is floored (`effective[best_idx] = effective[best_idx].max(target)`,
+  not replaced) at a *score value* — specifically, `cold_start_target` sorts the current
+  batch's scores descending and reads off the score sitting at zero-based ranked index
+  `ColdStartSlotMin` (checked-in `ColdStartSlotMin=15, ColdStartSlotMax=16`, a
+  single-width range that always selects index 15). Selection of *which* candidate gets
+  boosted is by raw score (`pick_by_score`) unless `EnableColdStartThompsonSampling`
+  (default **off**) enables a Beta-distribution Thompson-sampling pick over
+  `view_count`/`fav_count` instead. **This floors one candidate's pre-adjustment score
+  to at least what the 16th-ranked candidate currently scores — it does not assign or
+  guarantee a final 16th-place feed position.** The floor is applied inside
+  `RankingScorer` before author-diversity and OON adjustments run on top of it, and
+  before `VMRanker` runs afterward (checked-in default `EnableVMRanker=true`) and can
+  replace `.score` outright — either stage can move the boosted candidate materially
+  away from wherever this floor initially placed it. This answers "what happens for a
+  new/small author's post": under checked-in defaults, at most one such post per
+  request gets its score floor raised to a mid-pack level; whether it actually lands
+  near the 16th slot in the *final* order depends on what runs after this floor is
+  applied.
 - **`post_unexplored`**: encourages showing the viewer something outside their normal
   pattern. Two modes: additive (`PostUnexploredWeight = 0.02`, default) or, if
   `EnableMultiplicativePostUnexplored` (default off) is set, it instead *multiplies* the
@@ -450,20 +463,25 @@ a *subset* of `phoenix_scores` (the "core" ~20 heads unconditionally; `video_ope
 `VMRankerSendHeadWeights` — the full computed `head_weights` and `weighted_score`.
 Request-level: viewer ID, following count, `value_model_id` (checked-in **`"dpp"`**),
 and `dpp_params` (`theta = 0.65`, `max_selected_rank = 150`) whenever either is nonzero
-— which they are by default, so **DPP-based diversity re-ranking is active by default
-at the VM-ranker layer**, even though `RankingScorer`'s own author-diversity discount is
-a separate, independently-active mechanism.
+— which they are by default, so **DPP-based diversity re-ranking is configured/requested
+by default at the VM-ranker layer** (DIRECT: this is what Home Mixer sends). Whether the
+external VMRanker service actually performs DPP re-ranking on receipt of these
+parameters, and how, is not observable from this snapshot (UNKNOWN — see below). This is
+still a separate, independently-active mechanism from `RankingScorer`'s own
+author-diversity discount, which is computed and applied entirely inside Home Mixer.
 
 **DPP in plain English**: a Determinantal Point Process is a way of picking a diverse
 subset from a ranked list by penalizing candidates that are too *similar* to
 higher-ranked ones already chosen (via a similarity kernel), rather than only penalizing
 literal author repeats the way `RankingScorer`'s diversity discount does. `theta`
 controls how strongly similarity is penalized; `max_selected_rank` (150) likely bounds
-how deep into the candidate pool the DPP re-ranking logic considers. **The actual kernel/
-similarity computation, and everything about how VMRanker's external service turns these
-parameters plus the candidate batch into a re-ranked score, is external to this
-snapshot — UNKNOWN.** This repo shows only the request Home Mixer builds, not the
-service's internals.
+how deep into the candidate pool the DPP re-ranking logic considers. **DIRECT** is limited
+to what Home Mixer sends (`value_model_id="dpp"`, `theta=0.65`, `max_selected_rank=150`);
+the actual kernel/similarity computation, and everything about how VMRanker's external
+service turns these parameters plus the candidate batch into a re-ranked score, is
+**UNKNOWN** — external to this snapshot. This repo shows only the request Home Mixer
+builds, not the service's internals or confirmation that it honors these parameters as
+named.
 
 **How the returned score is used** — two distinct paths depending on configuration
 (`vm_ranker.rs:75-100`):
@@ -669,25 +687,37 @@ S17 census.
    Caveat: the underlying rationale (e.g. distinguishing high-reach accounts' viewing
    behavior) is not stated in source — POSSIBLE explanation, not DIRECT.
 
-7. **Author cold-start promotes at most one candidate per request, and floors its score
-   to a single fixed slot (position 15, 0-indexed) under checked-in defaults, not a
-   score range.**
+7. **Author cold-start floors one candidate's score to at least the value currently
+   occupying ranked index 15 under checked-in defaults — this is a score floor applied
+   mid-pipeline, not a guaranteed final feed position.**
    Significance: MEDIUM. Evidence class: DIRECT.
    Claim: `ColdStartSlotMin = 15`, `ColdStartSlotMax = 16` — `cold_start_target`'s
    `rand::rng().random_range(lo..hi)` over a single-width range `[15, 16)` deterministically
-   selects index 15 every time; only one candidate (`best_idx`) is boosted per call.
+   reads the *score value* at zero-based ranked index 15 from the current batch; only one
+   candidate (`best_idx`) is boosted per call, via
+   `effective[best_idx] = effective[best_idx].max(target)` — a floor, not an assignment.
+   Under checked-in defaults, `RankingScorer`'s own author-diversity/OON adjustments run
+   on top of this floored score afterward, and `VMRanker` (`EnableVMRanker=true` by
+   default) runs after `RankingScorer` and can replace `.score` outright — so the
+   boosted candidate's *final* position is not fixed by this mechanism alone.
    Source: `home-mixer/scorers/author_cold_start.rs:182-191,257-309`,
    `home-mixer/params/param.rs` (`ColdStartSlotMin`, `ColdStartSlotMax`).
+   Caveat: whether the candidate ends up near rank 15 in the truly final order depends
+   on the magnitude of the diversity/OON multipliers and on what VMRanker returns for
+   it — not independently traced end-to-end for a concrete example in this macro.
 
-8. **DPP-based diversity re-ranking at the VMRanker layer is active by default,
-   independently of `RankingScorer`'s own author-diversity discount — two distinct
-   diversity mechanisms run simultaneously under checked-in defaults.**
-   Significance: MEDIUM. Evidence class: DIRECT (both mechanisms' checked-in
-   activation); UNKNOWN (how VMRanker's DPP kernel internally computes similarity —
-   external service).
-   Claim: `EnableAuthorDiversity = true` (RankingScorer-side) and
-   `VMRankerDppTheta = 0.65` (nonzero, VMRanker-side) are both checked-in defaults,
-   and neither gates the other.
+8. **DPP-based diversity re-ranking is configured/requested at the VMRanker layer by
+   default, independently of `RankingScorer`'s own author-diversity discount — two
+   distinct diversity mechanisms are both active in the checked-in request path, one
+   fully local and one dependent on an external service actually honoring what's sent.**
+   Significance: MEDIUM. Evidence class: DIRECT (that Home Mixer sends nonzero DPP
+   params by default, and that `RankingScorer`'s local diversity discount runs
+   independently); UNKNOWN (whether/how VMRanker's external service performs DPP
+   re-ranking on receipt of these parameters — its kernel/similarity computation is not
+   in this snapshot).
+   Claim: `EnableAuthorDiversity = true` (RankingScorer-side, fully local and directly
+   observed) and `VMRankerDppTheta = 0.65` (nonzero, sent to the external VMRanker
+   service by default) are both checked-in defaults, and neither gates the other.
    Source: `home-mixer/params/param.rs` (`EnableAuthorDiversity`, `VMRankerDppTheta`),
    `home-mixer/scorers/vm_ranker.rs:206-216`.
 
