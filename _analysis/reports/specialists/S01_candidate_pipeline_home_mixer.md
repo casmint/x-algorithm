@@ -83,7 +83,7 @@ The order **is** exactly the sequence above, confirmed directly from `execute_st
 
 ## Candidate sources and merge behavior
 
-`PhoenixCandidatePipeline`'s 7 sources (declared order = `thunder_source, tweet_mixer_source, simclusters_source, phoenix_source, phoenix_topics_source, phoenix_moe_source, cached_posts_source`) all run concurrently and are merged by simple concatenation (`collected.append(&mut candidates)` per source, `candidate_pipeline.rs:L264-L267`) — there is no interleaving or per-source quota at the merge point itself; ordering is entirely determined downstream by scoring/selection.
+`PhoenixCandidatePipeline`'s 7 sources (declared order = `thunder_source, tweet_mixer_source, simclusters_source, phoenix_source, phoenix_topics_source, phoenix_moe_source, cached_posts_source`) are evaluated for their `enable()` gate and, for whichever pass, run concurrently; results are merged by simple concatenation (`collected.append(&mut candidates)` per source, `candidate_pipeline.rs:L264-L267`) — there is no interleaving or per-source quota at the merge point itself; ordering is entirely determined downstream by scoring/selection.
 
 **This resolves S00-C043 (SimClusters wiring): `SimclustersSource::new(simclusters_ann_client, core_data_hydrator.clone())` is directly constructed and included in the sources `Vec` — CONFIRMED.** It also surfaces a new, materially significant gap: **`TweetMixerSource`, `PhoenixTopicsSource`, and `PhoenixMOESource` are three additional, fully-wired, request-gated candidate sources that README's Candidate Sources table and request-path diagram never name** (S01-F003). README's claim that Thunder, Phoenix retrieval, and SimClusters are *the* out-of-network sources is therefore incomplete, not merely under-specified.
 
@@ -103,7 +103,7 @@ Two-tier capability exists at the framework level (`query_hydrators()` then `dep
 
 ## Scoring and selector boundary
 
-3 scorers run **sequentially, not concurrently** — `PhoenixScorer` → `RankingScorer` → `VMRanker` — confirmed directly from `candidate_pipeline.rs`'s scorer loop (a plain `for` loop, not `join_all`). `TopKScoreSelector` then sorts by score and truncates. S01 did not re-derive `RankingScorer`'s weighted-sum formula (S00/S05 territory) but did confirm `VMRanker`'s failure mode precisely: a whole-call RPC failure (xDS or DNS) returns `Err` for every candidate, which — per the framework's default `update_all` — means every candidate simply **keeps `RankingScorer`'s score**, and `TopKScoreSelector` operates on that instead. DPP diversity reranking silently disappears for that request; the request does not fail (S01-F012).
+3 scorers run **sequentially, not concurrently** — `PhoenixScorer` → `RankingScorer` → `VMRanker` — confirmed directly from `candidate_pipeline.rs`'s scorer loop (a plain `for` loop, not `join_all`). `TopKScoreSelector` then sorts by score and truncates. S01 did not re-derive `RankingScorer`'s weighted-sum formula (S00/S05 territory) but did confirm `VMRanker`'s failure mode precisely: a whole-call RPC failure (xDS or DNS) returns `Err` for every candidate, which — per the framework's default `update_all` — means **none of `VMRanker`'s per-candidate updates are applied**, and `execute_stages()` proceeds to selection regardless (DIRECT). Whether this means candidates specifically retain `RankingScorer`'s score field, and that `TopKScoreSelector` therefore operates on `RankingScorer`'s ordering, was not independently traced field-by-field (which score field each scorer writes/reads, and `TopKScoreSelector`'s exact comparison logic) — that stronger consequence is a plausible **STRONG_INFERENCE**, not DIRECT, and is a concrete downstream obligation for S05/S08 (S01-F012).
 
 ## Post-selection / visibility boundary
 
@@ -133,9 +133,9 @@ Distinct request-mode discriminators identified on `ScoredPostsQuery`, each with
 
 Summarized from the sections above and `S01-F004`/`S01-F012`/`S01-F013`:
 
-- **Request-time**: per-candidate/per-source/per-unit failures degrade data quality, never availability. No single hydrator, source, or scorer failure can fail a request; a candidate simply proceeds with stale/unset fields, or a source simply contributes nothing. `VMRanker`'s whole-call failure is the clearest concrete instance: DPP reranking silently disappears, `RankingScorer`'s order is used instead.
+- **Request-time**: per-candidate/per-source/per-unit failures degrade data quality, never availability. No single hydrator, source, or scorer failure can fail a request; a candidate simply proceeds with stale/unset fields, or a source simply contributes nothing. `VMRanker`'s whole-call failure is the clearest concrete instance directly established: none of its per-candidate updates are applied, and `execute_stages()` proceeds to selection regardless — whether that means candidates keep specifically `RankingScorer`'s score is a plausible but not independently field-traced consequence (STRONG_INFERENCE, routed to S05/S08 — see S01-F012).
 - **Gizmoduck / resurrection-date fetches** (`server.rs::QueryBuilder::fetch_viewer_data`/`fetch_resurrection_time`): 200ms timeout, fail open to `ViewerData::default()` / `None` respectively.
-- **Boot-time**: nearly every client constructor across all `prod()`/`new()` pipeline constructors and `HomeMixerServer::build` is wrapped in `.expect(...)`, panicking the whole process on a single failed dependency. The sole exception found is `ThunderCapiClient`, which degrades gracefully to `None` with a logged warning, falling back to what `ThunderSource` calls a "proxy path" (S01-F013).
+- **Boot-time**: nearly every client constructor across the 7 boot-time constructor functions S01 read in full (all `prod()`/`new()` pipeline constructors and `HomeMixerServer::build`, within S01's 227 assigned files) is wrapped in `.expect(...)`, panicking the whole process on a single failed dependency. The only exception found in that sweep is `ThunderCapiClient`, which degrades gracefully to `None` with a logged warning, falling back to what `ThunderSource` calls a "proxy path" (S01-F013). Boot-time construction elsewhere in the repository, outside S01's ownership, was not examined.
 - **Side effects**: entirely fire-and-forget; cannot affect the response by construction, and their own internal errors are discarded by the framework (`let _ = join_all(...)`) regardless of what an individual side effect does internally.
 
 ## S00 carry-forward resolutions
@@ -154,18 +154,18 @@ Summarized from the sections above and `S01-F004`/`S01-F012`/`S01-F013`:
 
 13 findings recorded in `S01_findings.jsonl` (`S01-F001`–`S01-F013`); see that file for full evidence citations. Significance distribution: 6 HIGH, 5 MEDIUM, 2 LOW; all `CONFIRMED`/`DIRECT`.
 
-- **S01-F001 / S01-F002** (HIGH): three components are unreachable in production under current wiring — one (`ImpressedPostsQueryHydrator`) is module-compiled but never added to an active pipeline, permanently neutering `PreviouslySeenPostsBackupFilter`; two more (`PopularTopicsSource`, `PopularTopicsAuthorDedupFilter`) plus a third (`BroadcastLivenessHydrator`) are absent from their `mod.rs` declarations entirely and are not part of the compiled crate, with two of the three additionally hardcoding `enable() -> false`.
-- **S01-F003** (HIGH): `PhoenixCandidatePipeline` has 7 candidate sources; README names 3. `TweetMixerSource`, `PhoenixTopicsSource`, `PhoenixMOESource` are wired, gated, and running on every request without documentation.
+- **S01-F001 / S01-F002** (HIGH): three components are unreachable in production under current wiring — one (`ImpressedPostsQueryHydrator`) is module-compiled but never added to an active pipeline, permanently neutering `PreviouslySeenPostsBackupFilter`; two more (`PopularTopicsSource`, `PopularTopicsAuthorDedupFilter`) plus a third (`BroadcastLivenessHydrator`) are absent from their `mod.rs` declarations entirely and are not part of the compiled crate, with two of the three additionally hardcoding `enable() -> false`. Reactivating `PopularTopicsSource` would require more than restoring its `mod.rs` line — it has no construction/wiring site anywhere in the current tree.
+- **S01-F003** (HIGH): `PhoenixCandidatePipeline` has 7 candidate sources; README names 3. `TweetMixerSource`, `PhoenixTopicsSource`, `PhoenixMOESource` are wired into the pipeline and eligible to execute when their own `enable()` conditions pass — undocumented regardless of how often those conditions are actually true in production.
 - **S01-F004** (HIGH): the framework-wide failure model — resolves S00-F008 and generalizes it to every hydrator/scorer/source in the codebase.
-- **S01-F005** (HIGH): filters/scorers execute sequentially (order-dependent); every other stage runs concurrently (order-independent) — resolves S00-C045.
+- **S01-F005** (HIGH): concurrency is stage-specific — hydrator/source stages concurrent, filters/scorers strictly sequential (order-dependent), the selector a single synchronous call, side effects concurrent-among-themselves inside a fire-and-forget spawn — resolves S00-C045.
 - **S01-F006** (MEDIUM): the "wrapping" mechanism precisely characterized — resolves S00-C044.
 - **S01-F007** (MEDIUM): all six of S00's unplaced filters located with DIRECT evidence; none orphaned.
-- **S01-F008** (HIGH): `viewer_data.allow_for_you_recommendations` can silently force `in_network_only=true`, an undocumented account-status content-eligibility gate.
-- **S01-F009** (MEDIUM): six gRPC surfaces / six pipelines exist; README documents only the two composing the For You feed.
+- **S01-F008** (HIGH): `viewer_data.allow_for_you_recommendations` can silently force `in_network_only=true`, an undocumented account-status content-eligibility gate. (Its practical effect on each of the 5 out-of-network sources beyond `TweetMixerSource` is a plausible, not independently-verified, inference.)
+- **S01-F009** (MEDIUM): 5 registered gRPC services backed by 6 candidate pipeline implementations; README documents only the two composing the For You feed.
 - **S01-F010** (LOW): universal `TEST_USER_IDS` bypass across all five servers.
 - **S01-F011** (MEDIUM): debug endpoints accept live, caller-supplied feature-switch overrides; access-control boundary unestablished.
-- **S01-F012** (MEDIUM): `VMRanker` fails gracefully to `RankingScorer`'s score on whole-call RPC failure.
-- **S01-F013** (LOW): boot-time client construction is fail-hard except `ThunderCapiClient`'s graceful degradation.
+- **S01-F012** (MEDIUM): `VMRanker`'s per-candidate updates are skipped on whole-call RPC failure, so the request continues without them — DIRECT; whether that means candidates keep specifically `RankingScorer`'s score is a separate, not-independently-traced inference (STRONG_INFERENCE, routed to S05/S08).
+- **S01-F013** (LOW): within the 7 boot-time constructors S01 read in full, construction is fail-hard except `ThunderCapiClient`'s graceful degradation; not claimed as repository-wide.
 
 ## Cross-domain handoffs
 
