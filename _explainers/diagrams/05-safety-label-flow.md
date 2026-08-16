@@ -48,7 +48,7 @@ flowchart TD
     AGATHA -->|"named health-signal features<br/>consumed by 2 Scarecrow rules"| SCARECROW
     UCV2 -->|"skip-gate"| AES
     UCV2 -->|"skip-gate, as IsHighPageRankUser,<br/>across most Scarecrow rules"| SCARECROW
-    BDSM --> BDSMENF
+    BDSM -->|"flags account for"| BDSMENF
 
     SCARECROW -->|"writes labels with NO confirmed<br/>VF consumer: AGATHA_SPAM,<br/>AGATHA_SPAM_TOP_USER,<br/>RISKY_HIGH_VIZ_REPLY"| GIZ
     SCARECROW -->|"writes labels WITH confirmed<br/>VF consumers: SPAM,<br/>SPAM_HIGH_RECALL, and others"| GIZ

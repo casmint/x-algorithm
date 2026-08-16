@@ -515,6 +515,31 @@ UNSAFE: "A post's score" (used without specifying which of the three).
 
 ---
 
-Target was roughly 40–70 entries; this bank holds 57, spanning every required category.
+## PIPELINE FLOW / CONCURRENCY
+
+Added during Phase 2A diagram production — needed by Diagram 01's concurrency/sequencing
+visuals but not previously captured as standalone entries. Both are directly supported by
+master synthesis §2.
+
+**58.**
+SAFE: "Whichever retrieval sources are enabled for a given request run at the same time;
+their results are simply pooled together afterward — there's no priority order between
+sources based on which one found a candidate first."
+CLASS: DIRECT · MASTER: §2, §3 · CAVEAT: Concurrency among sources means simple pooling,
+not "first source wins" or "more sources contributing improves odds" in any tunable sense.
+UNSAFE: "Sources are checked in priority order until enough candidates are found."
+
+**59.**
+SAFE: "Pre-scoring filters and the ranking stages (Phoenix, RankingScorer, VMRanker) run
+in a strict, fixed sequence — each later stage depends on state an earlier stage already
+established, so they can't run concurrently with each other the way retrieval sources do."
+CLASS: DIRECT · MASTER: §2 · CAVEAT: Don't imply this sequential ordering is itself
+evidence of importance ranking among stages — it's a data-dependency requirement, not a
+priority statement.
+UNSAFE: "Filters and scorers all run at once, like retrieval sources do."
+
+---
+
+Target was roughly 40–70 entries; this bank holds 59, spanning every required category.
 Extend it as new artifacts surface claims worth reusing — don't let individual guides
 invent their own unreviewed phrasing for a fact already covered here.

@@ -20,6 +20,15 @@ service name. A separate process Home Mixer calls over RPC: Phoenix (ranking and
 retrieval sides), VMRanker, visibility filtering, Thunder, SimClusters,
 `phoenix-rankall`'s serving-side search, TweetMixer, Gizmoduck.
 
+Retrieval-source components (Thunder, SimClusters, the `Phoenix*Source` family,
+TweetMixer) are a special case worth calling out explicitly: they are themselves Home
+Mixer-side abstractions that each *call out to* a remote backend, not the backend itself —
+diagrams should draw them as belonging to Home Mixer's candidate-source layer, with a
+distinct connector to the remote service each one reaches, rather than drawing every
+retrieval source as if it were the remote dependency in full. `CachedPostsSource` is the
+one exception: it reads a local/cached candidate set rather than calling out to anything,
+so it should never get a remote-service treatment at all.
+
 **Background / asynchronous system** — dashed-border box. Runs continuously,
 independent of any single request: Agatha, BDSM, Grox, Botmaker/Scarecrow,
 abuse-enforcement-service, `phoenix-rankall`'s ingestion pipeline. Not queried
@@ -41,6 +50,16 @@ retrieval → hydration → filters → scoring → visibility → response.
 **Score / prediction flow** — thinner solid arrow, distinct from the candidate-flow
 weight, labeled with what's flowing (a prediction, a score, a similarity value). Used
 when the diagram needs to show a *number* moving between stages, not the post itself.
+
+This flow type carries three genuinely different kinds of "number," and a diagram must not
+render them as visually interchangeable just because they're all a score/prediction flow:
+a **prediction vector** (Phoenix's ~24 simultaneous per-action probabilities — plural,
+several values at once), a **scalar score** (RankingScorer's single weighted-sum output —
+one value), and a **selection result** (VMRanker's DPP outcome — the same scalar, either
+kept exactly or zeroed, never a newly computed number). A vector should read visually as
+*several* things; a scalar should read as *one* thing; a selection result should read as
+that same one thing in one of two states, not a third new value. See `CLAIM_BANK.md` #57
+for the underlying claim this distinction protects.
 
 **Metadata / signal enrichment** — side arrow, entering the main flow from the side rather
 than continuing it. Used for hydration steps (follow graph, engagement counts, safety
