@@ -10,9 +10,9 @@
     continue toward the feed), Interstitial (the post may still be
     delivered, with some form of warning or restricted treatment), or Drop
     (the post is removed and never reaches the client, regardless of score).
-    Which policy applies — the more permissive TimelineHome for in-network
-    posts, or the stricter TimelineHomeRecommendations for out-of-network
-    posts — depends on the post's relationship to the viewer; both policies
+    Which policy applies depends on the post's relationship to the viewer.
+    TimelineHomeRecommendations, used for recommendation/OON contexts,
+    includes a broader set of drop rules than TimelineHome; both policies
     can produce all three outcomes. A separate, earlier mechanism can also
     exclude a post from the retrieval corpus entirely, before any viewer's
     request, independent of this per-request check.
@@ -159,7 +159,7 @@
 
     .funnel-shape { fill: var(--role-4-fill); stroke: var(--role-4-stroke); stroke-width: 2; }
     .funnel-label { font-size: 17px; font-weight: 600; }
-    .top50-label { font-size: 18px; font-weight: 700; }
+    .top-k-label { font-size: 18px; font-weight: 700; }
     .funnel-subtitle { font-size: 12px; }
     .zoom-link { font-size: 10.5px; font-style: italic; fill: var(--color-ink-muted); }
     .checked-default-badge { fill: var(--color-background); stroke: var(--color-rule); stroke-width: 1.2; }
@@ -231,7 +231,7 @@
     <!-- Top K -->
     <g id="top-k">
       <polygon class="funnel-shape" points="650,266 950,266 895,336 705,336" />
-      <text x="800" y="298" text-anchor="middle" class="font-technical top50-label">Top K</text>
+      <text x="800" y="298" text-anchor="middle" class="font-technical top-k-label">Top K</text>
       <text x="800" y="318" text-anchor="middle" class="font-editorial funnel-subtitle ink-muted">Highest-scoring candidates</text>
     </g>
     <g id="top-k-checked-default">

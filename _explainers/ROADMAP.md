@@ -60,12 +60,15 @@ Phase 2+ groundwork first).
 - **Primary danger:** conflating Interstitial with Drop; conflating index-time exclusion
   with per-request VF.
 - **Prerequisites:** D3.
-- **Priority:** P0 · **Status:** REVIEWED (`assets/src/d4-ranking-vs-visibility*.svg` —
-  desktop light/dark, mobile, and social renders all exist and have been visually
-  QA'd — 10-second test, grayscale test, small-size test — against
-  `diagram-design/D4_PRODUCTION_SPEC.md`, `CLAIM_BANK.md`, and `EDITORIAL_RULES.md`; see
-  `assets/README.md`. Not yet FINAL — awaits a human visual sign-off pass beyond this
-  phase's self-QA before publication polish.)
+- **Priority:** P0 · **Status:** FINAL (`assets/src/d4-ranking-vs-visibility*.svg` —
+  desktop light/dark, mobile, and social renders all exist. Received, in order:
+  implementation QA (10-second test, small-size test), grayscale QA, responsive QA
+  (all four render targets), human visual review, a post-review epistemic correction
+  pass (Top-K framing, Interstitial wording, a social-card arrow fix, a callout
+  leader-line adjustment, and OON policy wording — see `assets/README.md`, "Correction
+  pass after human visual review"), and an accessibility-copy parity check (the
+  `<desc>` text's "more permissive / stricter" framing brought in line with the
+  visible diagram's "broader set of drop cases" framing). Ready for publication.)
 
 ### D5. Safety/reputation signal flow
 - **Purpose:** make the codename ecosystem navigable without conflating similar names.

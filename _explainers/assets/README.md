@@ -507,3 +507,40 @@ dark 3200×1800 @ 1600×900 logical, mobile 800×1896 @ 400×948 logical, social
 `field-atlas.css` token changed, so this pass required no re-sync beyond
 confirming the shared block was already current. D4 stays REVIEWED, not
 promoted to FINAL, pending the next human pass.
+
+## Accessibility-copy parity check (final pass before sign-off)
+
+The Top-K/Interstitial/policy-wording correction pass above updated the
+*visible* diagram but left the accessible `<desc>` text on desktop, dark,
+and mobile still reading "the more permissive TimelineHome... or the
+stricter TimelineHomeRecommendations" — the exact framing the correction
+pass had just removed from the visible copy for its moral/harshness
+undertone. A screen reader user would have gotten a materially different
+(and less careful) claim than a sighted reader looking at the diagram.
+
+Fixed by rewording the affected `<desc>` sentence to the same "broader set
+of drop rules" framing now used on-diagram:
+
+> Which policy applies depends on the post's relationship to the viewer.
+> TimelineHomeRecommendations, used for recommendation/OON contexts,
+> includes a broader set of drop rules than TimelineHome.
+
+The existing "both policies can produce all three outcomes" clause (desktop
+and dark only — mobile's `<desc>` never had it) was preserved unchanged: it's
+an already-approved claim, stated explicitly in
+`../diagram-design/D4_PRODUCTION_SPEC.md`'s "What this must NOT imply"
+section ("both policies produce all three outcomes; OON is stricter, not
+maximally restrictive"). Social's `<desc>` never mentioned TimelineHome at
+all (it doesn't show the comparison strip), so it needed no change.
+
+Also renamed the `.top50-label` CSS class to `.top-k-label` in the three
+files that carry it (desktop, dark, mobile — social has no Top K node) — a
+pure identifier rename (same font-size/weight, same two call sites per
+file: the class definition and its one usage), left over from the "Top 50"
+→ "Top K" content change two passes ago.
+
+Both changes are non-visual by construction (accessibility text and an
+internal CSS class name respectively) — verified by pixel-diffing every
+export against the immediately prior commit's PNGs: all four render at
+**0 differing pixels**, confirming neither change touched a single rendered
+pixel. D4 is now FINAL.
