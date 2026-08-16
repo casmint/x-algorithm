@@ -2,18 +2,19 @@
   role="img" aria-labelledby="d4-title d4-desc" font-family="Inter, ui-sans-serif, system-ui, sans-serif">
   <title id="d4-title">Diagram 4 — Ranking vs. Visibility Filtering</title>
   <desc id="d4-desc">
-    A high-scoring post makes the Top 50, then passes through Visibility
-    Filtering, a separate policy gate that runs after ranking is finished, per
-    viewer and per post. The gate produces one of three outcomes: Allow (the
-    post can continue toward the feed), Interstitial (the post is still
-    delivered, with a tap-through warning), or Drop (the post is removed and
-    never reaches the client, regardless of score). Which policy applies —
-    the more permissive TimelineHome for in-network posts, or the stricter
-    TimelineHomeRecommendations for out-of-network posts — depends on the
-    post's relationship to the viewer; both policies can produce all three
-    outcomes. A separate, earlier mechanism can also exclude a post from the
-    retrieval corpus entirely, before any viewer's request, independent of
-    this per-request check.
+    A high-scoring post makes the Top K (the highest-scoring candidates; 50
+    in checked-in defaults), then passes through Visibility Filtering, a
+    separate policy gate that runs after ranking is finished, per viewer and
+    per post. The gate produces one of three outcomes: Allow (the post can
+    continue toward the feed), Interstitial (the post may still be
+    delivered, with some form of warning or restricted treatment), or Drop
+    (the post is removed and never reaches the client, regardless of score).
+    Which policy applies — the more permissive TimelineHome for in-network
+    posts, or the stricter TimelineHomeRecommendations for out-of-network
+    posts — depends on the post's relationship to the viewer; both policies
+    can produce all three outcomes. A separate, earlier mechanism can also
+    exclude a post from the retrieval corpus entirely, before any viewer's
+    request, independent of this per-request check.
   </desc>
 
   <!--
@@ -158,6 +159,8 @@
     .top50-label { font-size: 18px; font-weight: 700; }
     .funnel-subtitle { font-size: 12px; }
     .zoom-link { font-size: 10.5px; font-style: italic; fill: var(--color-ink-muted); }
+    .checked-default-badge { fill: var(--color-background); stroke: var(--color-rule); stroke-width: 1.2; }
+    .checked-default-text { font-size: 9.5px; fill: var(--color-ink-muted); }
 
     .arrow-primary { stroke: var(--color-ink); stroke-width: 3; fill: none; marker-end: url(#arrow-primary-head); }
     .arrow-policy { stroke: var(--outcome-policy); stroke-width: 2.5; fill: none; marker-end: url(#arrow-policy-head); }
@@ -222,11 +225,15 @@
 
     <path class="arrow-primary" d="M800,230 L800,262" />
 
-    <!-- Top 50 -->
-    <g id="top-50">
+    <!-- Top K -->
+    <g id="top-k">
       <polygon class="funnel-shape" points="650,266 950,266 895,336 705,336" />
-      <text x="800" y="298" text-anchor="middle" class="font-technical top50-label">Top 50</text>
-      <text x="800" y="318" text-anchor="middle" class="font-editorial funnel-subtitle ink-muted">Made the cut by score</text>
+      <text x="800" y="298" text-anchor="middle" class="font-technical top50-label">Top K</text>
+      <text x="800" y="318" text-anchor="middle" class="font-editorial funnel-subtitle ink-muted">Highest-scoring candidates</text>
+    </g>
+    <g id="top-k-checked-default">
+      <rect class="checked-default-badge" x="615" y="347" width="170" height="19" rx="9.5" />
+      <text x="700" y="360" text-anchor="middle" class="font-technical checked-default-text">50 in checked-in defaults</text>
     </g>
     <text x="965" y="358" text-anchor="start" class="font-editorial zoom-link">— see Diagram 03</text>
 
@@ -257,7 +264,8 @@
       <line x1="800" y1="603" x2="800" y2="614" stroke="var(--color-ink)" stroke-width="2.2" stroke-linecap="round" />
       <circle cx="800" cy="620" r="1.7" fill="var(--color-ink)" />
       <text x="800" y="650" class="font-editorial outcome-label">Interstitial</text>
-      <text x="800" y="670" class="font-editorial outcome-subtitle ink-muted">Delivered, with a tap-through warning</text>
+      <text x="800" y="670" class="font-editorial outcome-subtitle ink-muted">May still be delivered</text>
+      <text x="800" y="686" class="font-editorial outcome-subtitle ink-muted">with warning/treatment</text>
     </g>
 
     <!-- Drop -->
@@ -286,7 +294,7 @@
     <g id="timeline-home-recommendations-card">
       <rect class="policy-card" x="820" y="734" width="350" height="82" rx="8" />
       <text x="995" y="760" class="font-technical policy-title" font-size="13.5">TimelineHomeRecommendations</text>
-      <text x="995" y="780" class="font-editorial policy-subtitle">Out-of-network policy — stricter</text>
+      <text x="995" y="780" class="font-editorial policy-subtitle">Recommendation/OON policy — broader</text>
       <text x="995" y="797" class="font-editorial policy-detail ink-muted">Everything TimelineHome checks, plus</text>
       <text x="995" y="810" class="font-editorial policy-detail ink-muted">~2 dozen additional drop rules</text>
     </g>
@@ -303,7 +311,7 @@
     <text x="1250" y="238" class="font-editorial side-note-text">through Phoenix's index-admission /</text>
     <text x="1250" y="252" class="font-editorial side-note-text">index-time safety check.</text>
     <text x="1250" y="272" class="font-editorial side-note-text">— see Diagrams 02, 05</text>
-    <path class="arrow-dotted" d="M1230,240 C1140,225 1080,208 1012,196" />
+    <path class="arrow-dotted" d="M1230,195 C1110,180 920,172 800,172" />
   </g>
 
   <!-- provenance -->

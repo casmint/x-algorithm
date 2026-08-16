@@ -4,8 +4,9 @@
   <desc id="d4s-desc">
     A high-scoring post reaches Visibility Filtering, a separate policy gate
     that runs after ranking. It produces one of three outcomes: Allow (can
-    continue), Interstitial (still delivered, with a warning), or Drop
-    (removed, regardless of score).
+    continue), Interstitial (may still be delivered, with some form of
+    warning or restricted treatment), or Drop (removed, regardless of
+    score).
   </desc>
 
   <!--
@@ -183,15 +184,13 @@
       <text x="600" y="118" text-anchor="middle" class="font-editorial funnel-label">High-scoring post</text>
     </g>
 
-    <path class="arrow-primary" d="M600,132 L600,158" />
+    <path class="arrow-primary" d="M600,132 L600,206" />
 
     <g id="vf-gate">
       <polygon class="vf-hex" points="410,268 480,214 720,214 790,268 720,322 480,322" />
       <text x="600" y="253" text-anchor="middle" class="font-technical vf-name">Visibility Filtering (VF)</text>
       <text x="600" y="278" text-anchor="middle" class="font-editorial" font-size="13" font-weight="600">Runs after ranking is already done</text>
     </g>
-
-    <path class="arrow-primary" d="M600,158 L600,206" />
 
     <path class="arrow-policy" d="M500,322 L500,350 L200,350 L200,378" />
     <path class="arrow-policy" d="M600,322 L600,378" />
@@ -208,7 +207,7 @@
       <line x1="600" y1="391" x2="600" y2="403" stroke="var(--color-ink)" stroke-width="2.4" stroke-linecap="round" />
       <circle cx="600" cy="409" r="1.9" fill="var(--color-ink)" />
       <text x="600" y="442" class="font-editorial outcome-label">Interstitial</text>
-      <text x="600" y="462" class="font-editorial outcome-subtitle ink-muted">Delivered, with a tap-through warning</text>
+      <text x="600" y="462" class="font-editorial outcome-subtitle ink-muted">Warning / treatment</text>
     </g>
 
     <g id="drop-outcome" text-anchor="middle">

@@ -257,8 +257,11 @@ self-containment reasons above.
 ## D4 content contract (Part 3) — what's on the diagram and why
 
 Primary spine, matches `../diagram-design/D4_PRODUCTION_SPEC.md`'s "Core
-composition" exactly: High-scoring post → Top 50 → Visibility Filtering (VF)
-→ Allow / Interstitial / Drop, one fork, three terminal states.
+composition" exactly: High-scoring post → Top K → Visibility Filtering (VF)
+→ Allow / Interstitial / Drop, one fork, three terminal states. (Originally
+labeled "Top 50" — renamed to "Top K" plus a subordinate checked-in-default
+annotation after human visual review; see "Correction pass after human
+visual review" below.)
 
 **A composition ambiguity in the production spec, resolved:** the spec's
 prose says the funnel "forks visibly into two policy lanes... each ending in
@@ -299,17 +302,18 @@ brief's supplied snapshot identifier.
 |---|---|---|---|
 | A. Desktop/article | `src/d4-ranking-vs-visibility.svg` | 1600×900 | Canonical. Full content: header pairing, primary fork, secondary IN/OON strip, index-time note, provenance footer. |
 | B. Dark desktop | `src/d4-ranking-vs-visibility-dark.svg` | 1600×900 | Identical structure to A; only the inline token block differs (see "Why each SVG is self-contained" above). |
-| C. Mobile | `src/d4-ranking-vs-visibility-mobile.svg` | 400×948 | Vertical. Same primary spine (post → Top 50 → VF → fork); three outcomes stay side-by-side in three narrow columns rather than stacking, since they fit at this width without crowding; IN/OON becomes two stacked cards (not side-by-side); index-time note becomes a compact footnote card; header/subtitle copy condensed (see below) without dropping any claim. |
+| C. Mobile | `src/d4-ranking-vs-visibility-mobile.svg` | 400×948 | Vertical. Same primary spine (post → Top K → VF → fork); three outcomes stay side-by-side in three narrow columns rather than stacking, since they fit at this width without crowding; IN/OON becomes two stacked cards (not side-by-side); index-time note becomes a compact footnote card; header/subtitle copy condensed (see below) without dropping any claim. |
 | D. Social/share card | `src/d4-ranking-vs-visibility-social.svg` | 1200×675 | Funnel + fork + header only, per spec — no secondary strip, no index-time note. Carries the one-line headline claim large and a minimal provenance mark. |
 
 **Mobile copy compression, specifically:** the header pairing shortens from
 full quoted questions ("Ranking asks: 'How valuable might this be to this
 viewer?'") to "Ranking asks: how valuable?" — same claim, no information
 dropped, just fewer words, matching the phase brief's own suggested
-condensed header form. Outcome subtitles compress similarly ("Delivered,
-with a tap-through warning" → "Still delivered, / warning shown") while
-preserving the one distinction that must never be lost: Interstitial is
-still delivered, Drop is removed. Verified this distinction survives at
+condensed header form. Outcome subtitles compress similarly (currently "May
+still be delivered / with warning/treatment" — see "Correction pass after
+human visual review" below for the wording history) while preserving the
+one distinction that must never be lost: Interstitial is still delivered,
+Drop is removed. Verified this distinction survives at
 mobile scale during visual QA.
 
 ---
@@ -448,3 +452,58 @@ the `svg` type selector, which matches the same physical `<svg>` element
 standalone. After the fix, all four exports are byte-identical to the
 previously-committed, already-QA'd PNGs — this patch changed the maintenance
 architecture, not the rendered output.
+
+## Correction pass after human visual review
+
+Field Atlas itself and D4's overall composition were approved as-is. Five
+targeted content/wording corrections were made, all in diagram-local markup
+— no shared token, shape convention, or component changed:
+
+1. **Top-K epistemic fix.** `Top 50` read as an unconditional architectural
+   fact. Renamed the node to `Top K` / "Highest-scoring candidates" (desktop,
+   dark, mobile — social never had this node, by original design, and stays
+   that way), with a small, visually subordinate checked-in-default
+   annotation ("50 in checked-in defaults") beside it — a plain outlined tag
+   per `COMPONENT_LIBRARY.md` item 13's badge convention, not a fourth new
+   shape. Mobile's first attempt at this annotation collided with the
+   primary-flow arrow (the arrow was drawn directly through the centered
+   text); fixed the same way the very first implementation pass fixed an
+   analogous collision — split into two pieces flanking the arrow rather
+   than centered on it.
+2. **Interstitial wording.** "Delivered, with a tap-through warning" named
+   one specific, universal UI treatment the production spec doesn't actually
+   guarantee. Desktop/dark/mobile now read "May still be delivered / with
+   warning/treatment"; social (which has no room for two-line subtitles)
+   reads "Warning / treatment." Interstitial vs. Drop remains unambiguous
+   either way — the glyph (triangle vs. X-circle) already carried that
+   distinction, and still does.
+3. **Social double arrow.** A leftover artifact from the social crop's
+   original simplification (Top K removed, but two arrow segments that used
+   to sandwich it were never merged) — two consecutive `arrow-primary`
+   paths between "High-scoring post" and the VF hexagon, producing two
+   visible arrowheads in a straight line. Merged into one path. Confirmed
+   via the pixel-diff below that this was the only structural change to the
+   social card beyond the wording edits.
+4. **Callout leader-line polish (desktop/dark only, optional).** The
+   "SEPARATE MECHANISM" dotted connector previously ended at the
+   "High-scoring post" shape's side corner, reading as a branch off the main
+   flow. Re-routed to land at the shape's top-center instead — same box
+   position, same "not part of the fork" framing, but now reads as
+   upstream/before the pipeline starts rather than a mid-flow branch.
+5. **Policy wording (optional).** "Out-of-network policy — stricter" →
+   "Recommendation/OON policy — broader" on all three variants that show the
+   comparison strip (desktop, dark, mobile — social never shows it). Same
+   underlying fact (meaningfully more drop rules apply), less room for a
+   moral/harshness reading at a glance. The framing line beneath the two
+   cards already said "covers more drop cases, not a claim that OON content
+   is unsafe" and didn't need to change.
+
+**Verification:** pixel-diffed every export against the prior commit's
+already-approved PNGs (`compare -metric AE` + a difference-composite
+visualization). All five changes are the *only* pixels that moved in each
+file — confirmed visually per file, not assumed. Dimensions unchanged (light/
+dark 3200×1800 @ 1600×900 logical, mobile 800×1896 @ 400×948 logical, social
+2400×1350 @ 1200×675 logical). `sync-svg-styles.py --check` passes; no
+`field-atlas.css` token changed, so this pass required no re-sync beyond
+confirming the shared block was already current. D4 stays REVIEWED, not
+promoted to FINAL, pending the next human pass.

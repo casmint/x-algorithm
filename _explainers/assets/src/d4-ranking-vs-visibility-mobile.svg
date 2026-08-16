@@ -2,16 +2,18 @@
   role="img" aria-labelledby="d4m-title d4m-desc" font-family="Inter, ui-sans-serif, system-ui, sans-serif">
   <title id="d4m-title">Diagram 4 — Ranking vs. Visibility Filtering (mobile)</title>
   <desc id="d4m-desc">
-    A high-scoring post makes the Top 50, then passes through Visibility
-    Filtering, a separate policy gate that runs after ranking is finished, per
-    viewer and per post. The gate produces one of three outcomes: Allow (the
-    post continues toward the feed), Interstitial (still delivered, with a
-    tap-through warning), or Drop (removed, regardless of score). Which
-    policy applies — the more permissive TimelineHome for in-network posts,
-    or the stricter TimelineHomeRecommendations for out-of-network posts —
-    depends on the post's relationship to the viewer. A separate, earlier
-    mechanism can also exclude a post from the retrieval corpus entirely,
-    before any viewer's request.
+    A high-scoring post makes the Top K (the highest-scoring candidates; 50
+    in checked-in defaults), then passes through Visibility Filtering, a
+    separate policy gate that runs after ranking is finished, per viewer and
+    per post. The gate produces one of three outcomes: Allow (the post
+    continues toward the feed), Interstitial (may still be delivered, with
+    some form of warning or restricted treatment), or Drop (removed,
+    regardless of score). Which policy applies — the more permissive
+    TimelineHome for in-network posts, or the stricter
+    TimelineHomeRecommendations for out-of-network posts — depends on the
+    post's relationship to the viewer. A separate, earlier mechanism can
+    also exclude a post from the retrieval corpus entirely, before any
+    viewer's request.
   </desc>
 
   <!--
@@ -154,6 +156,7 @@
     .funnel-label { font-size: 13px; font-weight: 600; }
     .top50-label { font-size: 14px; font-weight: 700; }
     .funnel-subtitle { font-size: 10px; }
+    .checked-default-text { font-size: 9px; font-style: italic; fill: var(--color-ink-muted); }
 
     .arrow-primary { stroke: var(--color-ink); stroke-width: 2.4; fill: none; marker-end: url(#m-arrow-primary-head); }
     .arrow-policy { stroke: var(--outcome-policy); stroke-width: 2; fill: none; marker-end: url(#m-arrow-policy-head); }
@@ -214,11 +217,13 @@
 
     <path class="arrow-primary" d="M200,186 L200,214" />
 
-    <g id="top-50">
+    <g id="top-k">
       <polygon class="funnel-shape" points="85,218 315,218 280,272 120,272" />
-      <text x="200" y="246" text-anchor="middle" class="font-technical top50-label">Top 50</text>
-      <text x="200" y="262" text-anchor="middle" class="font-editorial funnel-subtitle ink-muted">Made the cut by score — see D3</text>
+      <text x="200" y="246" text-anchor="middle" class="font-technical top50-label">Top K</text>
+      <text x="200" y="262" text-anchor="middle" class="font-editorial funnel-subtitle ink-muted">Highest-scoring candidates</text>
     </g>
+    <text x="190" y="286" text-anchor="end" class="font-editorial checked-default-text">50 in checked-in defaults</text>
+    <text x="210" y="286" text-anchor="start" class="font-editorial checked-default-text">— see D3</text>
 
     <path class="arrow-primary" d="M200,272 L200,304" />
 
@@ -245,8 +250,8 @@
       <line x1="200" y1="452" x2="200" y2="461" stroke="var(--color-ink)" stroke-width="1.9" stroke-linecap="round" />
       <circle cx="200" cy="466" r="1.4" fill="var(--color-ink)" />
       <text x="200" y="490" class="font-editorial outcome-label">Interstitial</text>
-      <text x="200" y="506" class="font-editorial outcome-subtitle ink-muted">Still delivered,</text>
-      <text x="200" y="519" class="font-editorial outcome-subtitle ink-muted">warning shown</text>
+      <text x="200" y="506" class="font-editorial outcome-subtitle ink-muted">May still be delivered</text>
+      <text x="200" y="519" class="font-editorial outcome-subtitle ink-muted">with warning/treatment</text>
     </g>
 
     <g id="drop-outcome" text-anchor="middle">
@@ -273,7 +278,7 @@
     <g id="timeline-home-recommendations-card">
       <rect class="policy-card" x="40" y="652" width="320" height="86" rx="7" />
       <text x="200" y="674" class="font-technical policy-title" font-size="11.5">TimelineHomeRecommendations</text>
-      <text x="200" y="692" class="font-editorial policy-subtitle">Out-of-network policy — stricter</text>
+      <text x="200" y="692" class="font-editorial policy-subtitle">Recommendation/OON policy — broader</text>
       <text x="200" y="708" class="font-editorial policy-detail ink-muted">Everything TimelineHome checks, plus</text>
       <text x="200" y="720" class="font-editorial policy-detail ink-muted">~2 dozen additional drop rules</text>
     </g>
