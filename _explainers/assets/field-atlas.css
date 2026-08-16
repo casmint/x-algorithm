@@ -3,21 +3,46 @@
   Canonical source for the visual system described in
   ../diagram-design/ART_DIRECTION.md and ../diagram-design/COMPONENT_LIBRARY.md.
 
-  This file is the documented source of truth. Because SVG assets in src/ must
-  remain self-contained (portable as <img>, embeddable, convertible to PNG
-  without external stylesheet fetches), each SVG carries its own inline copy
-  of the tokens it actually uses inside a <style> block. If a token value
-  changes here, update it in every SVG's inline <style> too — see
-  assets/README.md, "Keeping tokens in sync."
+  This file is the single canonical source of truth for shared tokens. Each
+  managed SVG in src/ stays self-contained (portable as <img>, embeddable,
+  convertible to PNG without external stylesheet fetches) — it does NOT link
+  this file at render time. Instead, the region between the SVG-SHARED
+  markers below is injected verbatim into every managed SVG's
+  <style id="field-atlas-shared"> block by tools/sync-svg-styles.py.
+
+  Selector note: the base token rule below targets `svg`, not `:root`.
+  Reason: export tooling (tools/render.sh) screenshots each SVG after
+  wrapping it in a plain HTML document for headless Chrome, which makes the
+  *HTML* element `:root`, not the embedded `<svg>` — `.theme-dark`, applied
+  as a class on the `<svg>` element itself, would then target a different
+  element than `:root` does, silently breaking any token defined as a
+  var()-indirection of another token (e.g. --outcome-allow: var(--color-ink))
+  for the dark variant specifically, even though direct token usages still
+  looked correct. Using `svg` as the base selector keeps every token
+  anchored to the same physical element as `.theme-dark` regardless of
+  whether a given SVG is ever opened standalone (svg = document root) or
+  embedded (svg = descendant) — a tag selector matches either way.
+
+  DO NOT hand-edit a generated block inside an SVG. Edit this file, then run:
+    python3 tools/sync-svg-styles.py
+  See assets/README.md, "Editing shared tokens," for the full workflow.
 
   Two typefaces, two voices — never mixed within one label line's role:
   --font-technical  = codenames, component names, field names ("what the
                        source code calls it")
   --font-editorial   = titles, subtitles, walkthrough copy, annotations
                        ("what it means")
+
+  Light/dark handling: `svg` carries the light tokens (the implicit
+  default). `.theme-dark` carries only the dark-mode deltas, applied as a
+  class on the consuming SVG's own root element by the SVG variant itself
+  (not by this file) — see any dark SVG's opening <svg class="theme-dark"
+  ...> tag. This is the single canonical representation of both modes; no
+  duplicate dark block exists elsewhere.
 */
 
-:root {
+/* === SVG-SHARED BEGIN === */
+svg {
   /* ---- base tokens (paper / ink) ---- */
   --font-editorial: Inter, ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -70,13 +95,13 @@
      Per ART_DIRECTION.md role 5: color is never the sole signal for these three
      outcomes — each also gets a distinct terminal glyph (filled dot / warning
      triangle / X-in-circle). Allow is the least consequential outcome and stays
-     plain ink; Interstitial and Drop are policy consequences of the VF hexagon
-     itself, so both carry the role-5 red-orange family, differentiated by
-     stroke weight and fill rather than by a fourth invented hue. */
+     plain ink; Interstitial and Drop are both policy consequences of the same
+     VF hexagon, so both resolve to the same red-orange policy token —
+     deliberately not a fourth invented hue. Shape (glyph), not a second color,
+     is what distinguishes Interstitial from Drop. See assets/README.md,
+     "Allow / Interstitial / Drop." */
   --outcome-allow: var(--color-ink);
-  --outcome-interstitial: var(--role-5-stroke);
-  --outcome-drop: var(--role-5-stroke);
-  --outcome-drop-fill: var(--role-5-stroke);
+  --outcome-policy: var(--role-5-stroke);
 
   /* ---- badges (neutral ink, never a role hue) ---- */
   --badge-stroke: var(--color-ink-muted);
@@ -90,39 +115,11 @@
 
 /* ---- dark mode ----
    Hue families stay constant; only lightness/saturation shift. Never invert
-   role 1 (warm) to a cool hue — warmth is the identifying signal. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-background: #17140f;
-    --color-paper: #201c15;
-    --color-ink: #f2ede0;
-    --color-ink-muted: #b0a68f;
-    --color-rule: #3a3327;
-
-    --role-1-fill: #6b5327;
-    --role-1-ink: var(--color-ink);
-
-    --role-2-stroke: #7fa0bf;
-
-    --role-3-fill: #2b4d49;
-    --role-3-stroke: #6fb0a8;
-
-    --role-4-fill: #4a3d70;
-    --role-4-stroke: #a493d1;
-    --role-4-pill-fill: #9784c9;
-    --role-4-pill-ink: #17140f;
-
-    --role-5-stroke: #e2794a;
-
-    --role-6-stroke: #c98fa0;
-
-    --role-7-fill: #4a4d49;
-
-    --role-10-fill: #b99a4a;
-  }
-}
-
-:root[data-theme="dark"] {
+   role 1 (warm) to a cool hue — warmth is the identifying signal. Only the
+   tokens that actually change are listed; anything not redeclared here keeps
+   its :root (light) value, which is correct for tokens with no dark-specific
+   treatment (e.g. --dash-pattern). */
+.theme-dark {
   --color-background: #17140f;
   --color-paper: #201c15;
   --color-ink: #f2ede0;
@@ -130,7 +127,6 @@
   --color-rule: #3a3327;
 
   --role-1-fill: #6b5327;
-  --role-1-ink: var(--color-ink);
 
   --role-2-stroke: #7fa0bf;
 
@@ -151,6 +147,21 @@
   --role-10-fill: #b99a4a;
 }
 
+/* ---- shared cross-cutting base rules ----
+   Identical in every managed SVG regardless of which roles that particular
+   diagram exercises — kept here, not duplicated per-file. */
+text { fill: var(--color-ink); }
+.font-technical { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+.font-editorial { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+.ink-muted { fill: var(--color-ink-muted); }
+.italic { font-style: italic; }
+/* === SVG-SHARED END === */
+
+/*
+  Everything below this line is reference-only — not injected into any SVG.
+  Useful if this file is ever loaded directly (e.g. a future live HTML page
+  reusing these tokens outside the SVG-export pipeline).
+*/
 body {
   background: var(--color-background);
   color: var(--color-ink);

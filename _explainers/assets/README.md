@@ -23,7 +23,7 @@ actually gets built there.
 ```
 assets/
 ├── README.md                  — this file
-├── field-atlas.css            — canonical design tokens (documented source of truth)
+├── field-atlas.css            — canonical design tokens (single source of truth)
 ├── field-atlas.svgdefs.svg    — reusable SVG defs reference (arrow markers, hatch pattern)
 ├── preview/
 │   └── index.html             — local QA harness, all four render targets side by side
@@ -39,11 +39,14 @@ assets/
 │   ├── d4-ranking-vs-visibility-mobile.png
 │   └── d4-ranking-vs-visibility-social.png
 └── tools/
-    └── render.sh               — reproducible SVG → PNG export (headless Chrome)
+    ├── render.sh                 — reproducible SVG → PNG export (headless Chrome)
+    └── sync-svg-styles.py        — injects field-atlas.css's shared tokens into every managed SVG
 ```
 
 `src/` is source. `exports/` is output. Never hand-edit a file in `exports/`
-— re-run `tools/render.sh` instead.
+— re-run `tools/render.sh` instead. Within `src/`, never hand-edit the
+generated block inside a managed SVG's `<style id="field-atlas-shared">`
+— see "Editing shared tokens" below.
 
 ---
 
@@ -61,23 +64,96 @@ HTML/JS tooling only for export, is the whole implementation.
 
 ## Why each SVG is self-contained (no external stylesheet link)
 
-`field-atlas.css` is the **documented, canonical source of truth** for every
-token value. But each SVG in `src/` carries its own inline `<style>` block
-with a copy of the tokens it actually uses, rather than `<link>`-ing
-`field-atlas.css` externally. Reason: these SVGs need to work as a plain
+`field-atlas.css` is the **single canonical source of truth** for every
+shared token value. But each SVG in `src/` carries its own inline copy of
+the tokens it needs, rather than `<link>`-ing `field-atlas.css` externally
+at render time. Reason: these SVGs need to work as a plain
 `<img src="...">`, convert cleanly to PNG via headless Chrome, and be
 droppable into any future article page — all contexts where an external
 stylesheet reference from inside an SVG is unreliable (image contexts
 generally don't fetch external CSS for security reasons). Self-contained
 means portable.
 
-**Keeping tokens in sync:** if a palette value changes in `field-atlas.css`,
-the same value must change in every SVG's inline `<style>` block that uses
-it. This is a real maintenance cost of the self-contained approach, accepted
-deliberately for portability. There are currently 4 SVG files sharing the D4
-token set (light desktop, dark desktop, mobile, social — light-mode tokens;
-dark desktop carries the dark-mode token set). Grep for the hex values below
-across `src/*.svg` when changing a color.
+### Editing shared tokens
+
+The inline copy is **generated, not hand-maintained.** Each managed SVG
+carries two separate `<style>` blocks with a deliberately obvious split:
+
+- `<style id="field-atlas-shared">` — generated verbatim from
+  `field-atlas.css`, wrapped in `BEGIN/END GENERATED` comment markers plus a
+  provenance hash. **Never hand-edit this block** — edit is silently undone
+  the next time anyone runs the sync script, and in the meantime it's out of
+  sync with its own stated source.
+- `<style id="diagram-local-styles">` — hand-authored, specific to that
+  diagram/variant (font sizes, shape classes like `.funnel-shape` or
+  `.vf-hex`, arrow routing styles). This is exactly the CSS a human should be
+  editing directly.
+
+Workflow:
+
+```
+1. edit field-atlas.css              (the only file where token VALUES live)
+2. python3 tools/sync-svg-styles.py   (regenerates every managed SVG's shared block)
+3. python3 tools/sync-svg-styles.py --check   (verify — exits nonzero if anything's stale)
+4. tools/render.sh                    (re-export PNGs; this also re-runs step 2 automatically)
+```
+
+`tools/sync-svg-styles.py` (Python 3 standard library only, no dependencies)
+finds every SVG under `src/` that contains a
+`<style id="field-atlas-shared">` block — that marker is the only thing that
+makes an SVG "managed," so a new D1/D2/D3 file participates automatically
+the moment it includes one; there's no separate list to maintain. It then
+replaces that block's contents with the current canonical CSS, deterministically
+and idempotently (running it twice produces no second diff). `--check` makes
+no changes and exits nonzero if any managed SVG is stale — useful as a CI/
+pre-commit gate once this repo has one.
+
+`tools/render.sh` always syncs before rendering (per the invariant below), so
+exports can never be produced from a stale token block silently.
+
+```
+CHANGE A SHARED TOKEN ONCE
+         ↓
+  field-atlas.css
+         ↓
+  tools/sync-svg-styles.py
+         ↓
+every managed SVG's generated block matches, byte for byte
+```
+
+### Light/dark handling
+
+`field-atlas.css`'s shared region has exactly one canonical representation
+of both modes — no duplicated dark block anywhere:
+
+```css
+svg { /* light tokens, the implicit default */ }
+.theme-dark { /* only the dark-mode deltas */ }
+```
+
+A dark SVG variant opts in by adding `class="theme-dark"` to its own root
+`<svg>` element (see `src/d4-ranking-vs-visibility-dark.svg`'s opening tag);
+everything else about that file — geometry, diagram-local styles — is
+otherwise identical to its light counterpart. The base rule intentionally
+targets the `svg` tag rather than `:root`: `tools/render.sh` screenshots each
+SVG after wrapping it in a plain HTML document for headless Chrome, which
+makes `:root` mean the *HTML* element, not the embedded `<svg>` — a real bug
+caught during this refactor (see "What changed after real rendering" below).
+A tag selector matches the actual `<svg>` element correctly whether the file
+is ever opened standalone or embedded.
+
+### For a future D1/D2/D3 SVG: how to opt in
+
+1. Add two style blocks in the same place the D4 files have them: an empty
+   placeholder `<style id="field-atlas-shared"></style>` and a
+   `<style id="diagram-local-styles">` with that diagram's own classes.
+2. For a dark variant, add `class="theme-dark"` to the root `<svg>` tag.
+3. Run `python3 tools/sync-svg-styles.py` — the new file is discovered and
+   populated automatically (no manifest edit required).
+4. Write diagram-specific CSS only in the `diagram-local-styles` block. If a
+   new *shared* token or cross-cutting base rule is needed (a new role color,
+   for instance), add it to `field-atlas.css`'s SVG-SHARED region instead of
+   inlining it locally, then re-sync.
 
 ## Why two typefaces stay as CSS font stacks, never bundled files
 
@@ -136,12 +212,13 @@ material never supports (Interstitial isn't "kind of bad," Drop isn't
 
 What's implemented instead: `--outcome-allow` is plain ink (the calmest,
 least-marked outcome — continuing is not itself a policy consequence).
-`--outcome-interstitial` and `--outcome-drop` both reuse `--role-5-stroke`,
-because both are consequences of the same VF policy gate — the *shape*
-carries the real distinction (filled dot vs. outlined warning-triangle vs.
-filled X-in-circle), not a fourth invented hue. This reads correctly in
-grayscale (verified — see "Visual QA" below) and never implies a
-red-vs-green safety judgment.
+Interstitial and Drop both resolve through a single `--outcome-policy`
+token (itself `var(--role-5-stroke)`), because both are consequences of the
+same VF policy gate — the *shape* carries the real distinction (filled dot
+vs. outlined warning-triangle vs. filled X-in-circle), not a fourth invented
+hue or a separate token per outcome. This reads correctly in grayscale
+(verified — see "Visual QA" below) and never implies a red-vs-green safety
+judgment.
 
 ---
 
@@ -247,14 +324,19 @@ delegate does not reliably resolve CSS custom properties inside an inline
 `<style>` block, which this system depends on). Chrome was verified to
 render the CSS-variable-driven tokens correctly.
 
+`render.sh` always runs `tools/sync-svg-styles.py` first (no flag to skip
+it) — exports must never be produced from a stale shared-style block. Sync
+failure aborts the render.
+
 ```
 cd assets/tools
 ./render.sh
 ```
 
 This produces all four PNGs plus a copy of the canonical SVG in `exports/`,
-overwriting previous output — safe to re-run any time `src/` changes.
-Lossless PNG throughout, no JPEG, per the phase brief.
+overwriting previous output — safe to re-run any time `src/` or
+`field-atlas.css` changes. Lossless PNG throughout, no JPEG, per the phase
+brief.
 
 ---
 
@@ -325,3 +407,44 @@ system as specified in `../diagram-design/ART_DIRECTION.md` and
 `COMPONENT_LIBRARY.md` rendered as intended on the first real attempt. The
 one interpretive call (single fork vs. duplicated fork, see Part 3 above) was
 a composition-ambiguity resolution, not a convention change.
+
+## Maintenance patch: centralizing the shared styles (post-Phase-2B.1)
+
+The four D4 SVGs originally each carried a hand-synchronized copy of the
+shared tokens (documented at the time as a known, accepted maintenance cost).
+That was fine at four files; it would not have scaled cleanly to D1–D3. This
+patch replaced the manual copies with the generated
+`<style id="field-atlas-shared">` block described above, sourced from
+`field-atlas.css` by `tools/sync-svg-styles.py`.
+
+Building the generator surfaced a real, pre-existing latent bug, not just a
+maintenance smell: `field-atlas.css`'s token names (`--outcome-interstitial`,
+`--outcome-drop`, `--outcome-drop-fill`) didn't actually match what the
+shipped SVGs used (`--outcome-policy`) — the "canonical" file and the real
+implementation had already drifted within a single phase. Consolidating to
+the single `--outcome-policy` name (documented as the deliberate design
+already in `field-atlas.css`'s own comments) fixed that.
+
+Second, and more consequential: the first working version of the generator
+used `:root` as the base token selector, matching the pre-refactor files'
+own convention. It rendered the light variant correctly but silently broke
+two tokens (`--outcome-allow`, `--outcome-policy`) specifically in the *dark*
+export — both are defined as a `var()` indirection of another token, and
+`tools/render.sh` renders each SVG by embedding it inside a wrapper HTML
+document for headless Chrome, which makes `:root` resolve to the wrapper's
+`<html>` element rather than the embedded `<svg>`. Since `.theme-dark` is a
+class on the `<svg>` element itself, the two elements `:root` and
+`.theme-dark` were targeting were no longer the same element, and the
+indirected tokens silently fell back to their light-mode values while every
+*directly*-referenced token (backgrounds, strokes) still looked correct —
+exactly the kind of defect a visual-only spot check can miss. Caught by
+pixel-diffing the new dark export against the previously-committed,
+already-approved dark PNG (`compare -metric AE`, ImageMagick) rather than by
+eye — light/mobile/social all diffed at 0 pixels immediately, dark diffed at
+19,274 pixels, which localized cleanly to the fork arrows and terminal
+glyphs once visualized. Fixed by switching the base selector from `:root` to
+the `svg` type selector, which matches the same physical `<svg>` element
+`.theme-dark` targets regardless of whether the file is embedded or opened
+standalone. After the fix, all four exports are byte-identical to the
+previously-committed, already-QA'd PNGs — this patch changed the maintenance
+architecture, not the rendered output.

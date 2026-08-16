@@ -8,7 +8,14 @@
 # support them). Also copies the canonical desktop-light SVG into exports/
 # as the distributable editable source.
 #
-# Requires: google-chrome (or set CHROME_BIN to another Chromium binary).
+# Before rendering, this script always syncs every managed SVG's generated
+# <style id="field-atlas-shared"> block against the canonical
+# ../field-atlas.css (tools/sync-svg-styles.py) — exports must never be
+# produced from a stale token block. Sync failure aborts the render (set
+# -e); there is no flag to skip it.
+#
+# Requires: google-chrome (or set CHROME_BIN to another Chromium binary),
+# python3.
 #
 # Usage: ./render.sh   (run from this directory, or anywhere — paths below
 # are resolved relative to this script's location)
@@ -22,6 +29,10 @@ SRC_DIR="$ASSETS_DIR/src"
 EXPORTS_DIR="$ASSETS_DIR/exports"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+
+echo "== syncing Field Atlas shared styles =="
+python3 "$SCRIPT_DIR/sync-svg-styles.py"
+echo
 
 render() {
   local src_svg="$1" out_png="$2" width="$3" height="$4" scale="$5"
