@@ -61,10 +61,10 @@ misunderstand this system:
   like how many posts from the same author already rank above it. The filters that run
   before and after it are the same way: Home Mixer's own local removal logic, not calls to
   anywhere else.
-- **VMRanker** — a remote call to a separate service — runs the **DPP** (determinantal
-  point process) algorithm, taking the already-scored list and re-selecting a diverse
-  subset from it, so your feed isn't dominated by five near-duplicate posts about the same
-  topic.
+- **VMRanker** — a remote call to a separate service — can apply **DPP** (determinantal
+  point process) diversity selection to the already-scored list, re-selecting a diverse
+  subset from it so your feed isn't dominated by five near-duplicate posts about the same
+  topic (whether it actually does, on a given call, is a separate question — see §8).
 - **Visibility filtering** — another remote call — is a completely separate check, run
   after ranking, that decides whether a given post is even allowed to reach you at all — a
   post can score extremely well and still never be shown.
@@ -82,9 +82,10 @@ misunderstand this system:
 
 The distinction worth holding onto isn't just "Phoenix is not the algorithm" — it's three
 separate categories: **Home Mixer the orchestrator**, the **local, in-process logic it
-runs directly** (RankingScorer, most filters, BlenderSelector), and the **remote services
-it calls out to** (retrieval sources, Phoenix, VMRanker, visibility filtering). Keeping
-those three apart, rather than collapsing everything into "the algorithm," is the single
+runs directly** (RankingScorer, most filters, BlenderSelector), and the **remote
+dependencies it calls out to** (Phoenix, VMRanker, visibility filtering, and the backends
+behind several retrieval sources). Keeping those three apart, rather than collapsing
+everything into "the algorithm," is the single
 most useful thing this document can give you before the detail starts.
 
 *Primary evidence: S01 (Home Mixer orchestration), Rapid 01–04 (per-system detail).*

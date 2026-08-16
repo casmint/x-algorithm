@@ -11,10 +11,11 @@ Following) response end to end. It is not a thin coordinator that "calls out" fo
 everything: a substantial share of the pipeline — RankingScorer's scoring, all
 pre-scoring and post-selection filters, and the selectors that assemble the final
 response — runs as ordinary code directly inside the Home Mixer process, with no RPC
-involved. Other stages genuinely are separate services Home Mixer reaches over RPC:
-retrieval sources, Phoenix, VMRanker, and visibility filtering. It is *not* the same
-thing as Phoenix — Home Mixer is the orchestrator, Phoenix is one of several things it
-calls.
+involved. Other stages use remote dependencies — Phoenix, VMRanker, visibility
+filtering, and the backends behind several retrieval sources (though not all: the
+retrieval-source abstraction itself covers a mix of remote calls and at least one local
+cache path — see §3). It is *not* the same thing as Phoenix — Home Mixer is the
+orchestrator, Phoenix is one of several things it calls.
 
 **Phoenix** — The machine-learning model that predicts how likely a viewer is to do
 various things (favorite, reply, retweet, report, watch, ...) with a given candidate post.
