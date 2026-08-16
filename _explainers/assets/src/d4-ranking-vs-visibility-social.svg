@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675"
+  role="img" aria-labelledby="d4s-title d4s-desc" font-family="Inter, ui-sans-serif, system-ui, sans-serif">
+  <title id="d4s-title">A high ranking score does not guarantee a post is shown</title>
+  <desc id="d4s-desc">
+    A high-scoring post reaches Visibility Filtering, a separate policy gate
+    that runs after ranking. It produces one of three outcomes: Allow (can
+    continue), Interstitial (still delivered, with a warning), or Drop
+    (removed, regardless of score).
+  </desc>
+
+  <style>
+    :root {
+      --color-background: #f6f2ea;
+      --color-ink: #2b241c;
+      --color-ink-muted: #6f6656;
+
+      --role-4-fill: #ddd3ee;
+      --role-4-stroke: #5b4a8a;
+
+      --role-5-stroke: #b3491f;
+
+      --outcome-allow: var(--color-ink);
+      --outcome-policy: var(--role-5-stroke);
+    }
+
+    text { fill: var(--color-ink); }
+    .font-technical { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .font-editorial { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .ink-muted { fill: var(--color-ink-muted); }
+
+    .header-line { font-size: 25px; font-weight: 700; }
+    .header-accent-rank { fill: var(--role-4-stroke); }
+    .header-accent-vis { fill: var(--role-5-stroke); }
+
+    .funnel-shape { fill: var(--role-4-fill); stroke: var(--role-4-stroke); stroke-width: 2.4; }
+    .funnel-label { font-size: 18px; font-weight: 600; }
+
+    .arrow-primary { stroke: var(--color-ink); stroke-width: 3.4; fill: none; marker-end: url(#s-arrow-primary-head); }
+    .arrow-policy { stroke: var(--outcome-policy); stroke-width: 3; fill: none; marker-end: url(#s-arrow-policy-head); }
+
+    .vf-hex { fill: var(--color-background); stroke: var(--role-5-stroke); stroke-width: 3.4; }
+    .vf-name { font-size: 21px; font-weight: 700; }
+
+    .outcome-label { font-size: 19px; font-weight: 700; }
+    .outcome-subtitle { font-size: 12.5px; }
+
+    .provenance { font-size: 11px; fill: var(--color-ink-muted); }
+  </style>
+
+  <defs>
+    <marker id="s-arrow-primary-head" viewBox="0 0 12 12" refX="9.5" refY="6"
+      markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M1,1 L10,6 L1,11" fill="none" stroke="var(--color-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    </marker>
+    <marker id="s-arrow-policy-head" viewBox="0 0 12 12" refX="9.5" refY="6"
+      markerWidth="8.5" markerHeight="8.5" orient="auto-start-reverse">
+      <path d="M1,1 L10,6 L1,11" fill="none" stroke="var(--outcome-policy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="675" fill="var(--color-background)" />
+
+  <g id="header-pairing" text-anchor="middle">
+    <text x="600" y="56" class="font-editorial header-line">
+      <tspan class="header-accent-rank">Ranking</tspan> asks: how valuable? <tspan class="header-accent-vis">Visibility</tspan> asks: what's allowed?
+    </text>
+  </g>
+
+  <g id="primary-spine">
+    <g id="high-scoring-post">
+      <polygon class="funnel-shape" points="430,92 770,92 725,132 475,132" />
+      <text x="600" y="118" text-anchor="middle" class="font-editorial funnel-label">High-scoring post</text>
+    </g>
+
+    <path class="arrow-primary" d="M600,132 L600,158" />
+
+    <g id="vf-gate">
+      <polygon class="vf-hex" points="410,268 480,214 720,214 790,268 720,322 480,322" />
+      <text x="600" y="253" text-anchor="middle" class="font-technical vf-name">Visibility Filtering (VF)</text>
+      <text x="600" y="278" text-anchor="middle" class="font-editorial" font-size="13" font-weight="600">Runs after ranking is already done</text>
+    </g>
+
+    <path class="arrow-primary" d="M600,158 L600,206" />
+
+    <path class="arrow-policy" d="M500,322 L500,350 L200,350 L200,378" />
+    <path class="arrow-policy" d="M600,322 L600,378" />
+    <path class="arrow-policy" d="M700,322 L700,350 L1000,350 L1000,378" />
+
+    <g id="allow-outcome" text-anchor="middle">
+      <circle cx="200" cy="398" r="15" fill="var(--outcome-allow)" />
+      <text x="200" y="442" class="font-editorial outcome-label">Allow</text>
+      <text x="200" y="462" class="font-editorial outcome-subtitle ink-muted">Can continue toward the feed</text>
+    </g>
+
+    <g id="interstitial-outcome" text-anchor="middle">
+      <polygon points="600,376 578,416 622,416" fill="var(--color-background)" stroke="var(--outcome-policy)" stroke-width="2.8" stroke-linejoin="round" />
+      <line x1="600" y1="391" x2="600" y2="403" stroke="var(--color-ink)" stroke-width="2.4" stroke-linecap="round" />
+      <circle cx="600" cy="409" r="1.9" fill="var(--color-ink)" />
+      <text x="600" y="442" class="font-editorial outcome-label">Interstitial</text>
+      <text x="600" y="462" class="font-editorial outcome-subtitle ink-muted">Delivered, with a tap-through warning</text>
+    </g>
+
+    <g id="drop-outcome" text-anchor="middle">
+      <circle cx="1000" cy="398" r="17" fill="var(--outcome-policy)" />
+      <line x1="991" y1="389" x2="1009" y2="407" stroke="var(--color-background)" stroke-width="2.6" stroke-linecap="round" />
+      <line x1="1009" y1="389" x2="991" y2="407" stroke="var(--color-background)" stroke-width="2.6" stroke-linecap="round" />
+      <text x="1000" y="442" class="font-editorial outcome-label">Drop</text>
+      <text x="1000" y="462" class="font-editorial outcome-subtitle ink-muted">Removed, regardless of score</text>
+    </g>
+  </g>
+
+  <g id="headline-claim" text-anchor="middle">
+    <line x1="450" y1="500" x2="750" y2="500" stroke="var(--color-ink-muted)" stroke-width="1" opacity="0.4" />
+    <text x="600" y="548" class="font-editorial" font-size="25" font-weight="700">A high ranking score does not</text>
+    <text x="600" y="582" class="font-editorial" font-size="25" font-weight="700">guarantee a post is shown.</text>
+  </g>
+
+  <g id="provenance-footer" text-anchor="middle">
+    <text x="600" y="638" class="font-editorial provenance">Based on xai-org/x-algorithm public snapshot c65aa179 — source-grounded reconstruction</text>
+  </g>
+</svg>

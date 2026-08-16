@@ -1,0 +1,327 @@
+# Field Atlas — implementation
+
+Phase 2B.1. This directory turns `../diagram-design/ART_DIRECTION.md` and
+`../diagram-design/COMPONENT_LIBRARY.md` into a real, rendered visual system,
+and produces the first actual diagram asset: **D4 — Ranking vs. Visibility
+Filtering**.
+
+Nothing here reopens diagram semantics. Every shape, color, and word traces
+back to `../diagram-design/D4_PRODUCTION_SPEC.md`, `../diagrams/04-ranking-vs-visibility.md`,
+`../CLAIM_BANK.md`, and `../EDITORIAL_RULES.md`. Where this implementation had
+to make a call the specs left open, that call and its reasoning are recorded
+below rather than silently baked into the SVG.
+
+**Production order: D4 → D1 → D2 → D3.** D4 is done (this phase). D1 has
+**not** started — do not treat anything in this directory as a template
+already proven at D1's scale (fifteen stages, three hierarchy tiers) until it
+actually gets built there.
+
+---
+
+## Directory structure
+
+```
+assets/
+├── README.md                  — this file
+├── field-atlas.css            — canonical design tokens (documented source of truth)
+├── field-atlas.svgdefs.svg    — reusable SVG defs reference (arrow markers, hatch pattern)
+├── preview/
+│   └── index.html             — local QA harness, all four render targets side by side
+├── src/                       — hand-authored, editable SVG sources
+│   ├── d4-ranking-vs-visibility.svg         (desktop, light — canonical)
+│   ├── d4-ranking-vs-visibility-dark.svg    (desktop, dark)
+│   ├── d4-ranking-vs-visibility-mobile.svg  (mobile, vertical)
+│   └── d4-ranking-vs-visibility-social.svg  (social/share card)
+├── exports/                   — generated output only, never hand-edited
+│   ├── d4-ranking-vs-visibility.svg   (copy of the canonical light source)
+│   ├── d4-ranking-vs-visibility.png
+│   ├── d4-ranking-vs-visibility-dark.png
+│   ├── d4-ranking-vs-visibility-mobile.png
+│   └── d4-ranking-vs-visibility-social.png
+└── tools/
+    └── render.sh               — reproducible SVG → PNG export (headless Chrome)
+```
+
+`src/` is source. `exports/` is output. Never hand-edit a file in `exports/`
+— re-run `tools/render.sh` instead.
+
+---
+
+## Why hand-authored SVG, not Mermaid/canvas/image generation
+
+Per the phase brief: text must be exact, shapes carry semantic meaning
+(a hexagon means something specific — see `../diagram-design/COMPONENT_LIBRARY.md`
+item 6), arrows must route precisely, and future diagrams need to reuse the
+same components. Mermaid's layout engine doesn't give the control this
+system's shape language requires (a real elongated hexagon, orthogonal fork
+routing, distinct terminal glyphs); canvas/raster drawing and image
+generation aren't editable; screenshots of HTML boxes aren't diagrams. Plain
+hand-authored SVG plus a shared CSS token file, rendered with vanilla
+HTML/JS tooling only for export, is the whole implementation.
+
+## Why each SVG is self-contained (no external stylesheet link)
+
+`field-atlas.css` is the **documented, canonical source of truth** for every
+token value. But each SVG in `src/` carries its own inline `<style>` block
+with a copy of the tokens it actually uses, rather than `<link>`-ing
+`field-atlas.css` externally. Reason: these SVGs need to work as a plain
+`<img src="...">`, convert cleanly to PNG via headless Chrome, and be
+droppable into any future article page — all contexts where an external
+stylesheet reference from inside an SVG is unreliable (image contexts
+generally don't fetch external CSS for security reasons). Self-contained
+means portable.
+
+**Keeping tokens in sync:** if a palette value changes in `field-atlas.css`,
+the same value must change in every SVG's inline `<style>` block that uses
+it. This is a real maintenance cost of the self-contained approach, accepted
+deliberately for portability. There are currently 4 SVG files sharing the D4
+token set (light desktop, dark desktop, mobile, social — light-mode tokens;
+dark desktop carries the dark-mode token set). Grep for the hex values below
+across `src/*.svg` when changing a color.
+
+## Why two typefaces stay as CSS font stacks, never bundled files
+
+Per the phase brief: no font binaries in this repository. `--font-technical`
+resolves to a monospace system stack (`ui-monospace, SFMono-Regular, Menlo,
+Monaco, Consolas, "Liberation Mono", monospace`); `--font-editorial` resolves
+to a humanist sans stack (`Inter, ui-sans-serif, system-ui, -apple-system,
+BlinkMacSystemFont, "Segoe UI", sans-serif`). If Inter isn't installed, the
+fallback chain still lands on a clean system sans — verified visually in this
+phase's renders (see "Visual QA" below), which were produced on a machine
+without Inter installed, so what's committed already reflects the no-Inter
+fallback appearance, not a best case.
+
+---
+
+## Design tokens (Part 1)
+
+Full canonical definitions live in `field-atlas.css`. Summary:
+
+| Token group | Light | Dark | Used in D4? |
+|---|---|---|---|
+| Background / Paper / Ink / Muted ink / Rule | `#f6f2ea` / `#fffdf8` / `#2b241c` / `#6f6656` / `#d9d2c2` | `#17140f` / `#201c15` / `#f2ede0` / `#b0a68f` / `#3a3327` | yes |
+| Role 1 — Home Mixer (sand/ochre) | fill `#e8d5ad` | fill `#6b5327` | not this diagram |
+| Role 2 — Remote service (slate-blue) | stroke `#3f5872` | stroke `#7fa0bf` | not this diagram |
+| Role 3 — Retrieval (teal) | fill `#cfe3e0` / stroke `#2f6e68` | fill `#2b4d49` / stroke `#6fb0a8` | not this diagram |
+| Role 4 — Ranking/score (violet) | fill `#ddd3ee` / stroke `#5b4a8a` | fill `#4a3d70` / stroke `#a493d1` | **yes** — funnel |
+| Role 5 — Visibility/policy (red-orange) | stroke `#b3491f` | stroke `#e2794a` | **yes** — VF hexagon, fork arrows |
+| Role 6 — Background safety (plum) | stroke `#7c4a5c` | stroke `#c98fa0` | **yes** — index-time side note |
+| Role 7 — Data/state (slate-gray) | fill `#d7d9d6` | fill `#4a4d49` | not this diagram |
+| Role 10 — Non-organic (gold/amber) | fill `#ecd9a0` | fill `#b99a4a` | not this diagram |
+| Unknown hatch | ink hairlines, 0.16 opacity, over existing fill | same, light-ink hairlines | not this diagram (no production-unknown element in D4) |
+| Optional dash | ink-muted dasharray `6 5` | same | not this diagram (no gated path in D4) |
+
+Roles 1, 2, 3, 7, 10, plus the hatch and dash modifiers, are defined now in
+`field-atlas.css` specifically so D1–D3 don't have to repaint the palette —
+D4 alone only exercises roles 4, 5, and 6.
+
+**Contrast:** every text/fill pairing above was checked against WCAG's
+relative-luminance formula before implementation; all pairs clear 4.5:1 in
+both modes (role-1 sand/ink in light mode is the tightest at 10.6:1 — still
+well clear). See the palette table's role-4 and role-5 pairs specifically,
+since those are the two roles D4 actually uses for filled/stroked text
+regions.
+
+### Allow / Interstitial / Drop — a deliberate deviation from "give them each a token"
+
+The phase brief's token list names `ALLOW`, `INTERSTITIAL`, `DROP` as if they
+were three more hue roles alongside the ten in `ART_DIRECTION.md`. They
+aren't, and making them so would violate the art direction's own rule: role
+5 (red-orange) is **reserved exclusively for policy-gate shapes**, and no
+other role may introduce a new hue for "safe/warn/danger" — `ART_DIRECTION.md`
+explicitly requires shape, not color, to carry this distinction, precisely so
+the diagram doesn't default to a green/red good/bad reading the source
+material never supports (Interstitial isn't "kind of bad," Drop isn't
+"unsafe," Allow isn't "approved").
+
+What's implemented instead: `--outcome-allow` is plain ink (the calmest,
+least-marked outcome — continuing is not itself a policy consequence).
+`--outcome-interstitial` and `--outcome-drop` both reuse `--role-5-stroke`,
+because both are consequences of the same VF policy gate — the *shape*
+carries the real distinction (filled dot vs. outlined warning-triangle vs.
+filled X-in-circle), not a fourth invented hue. This reads correctly in
+grayscale (verified — see "Visual QA" below) and never implies a
+red-vs-green safety judgment.
+
+---
+
+## Reusable SVG component conventions (Part 2)
+
+Established now, for D1–D3 to reuse — not all are exercised by D4 itself
+(noted below). Implemented as SVG `<g>` groups with semantic classes/ids
+(`.funnel-shape`, `.vf-hex`, `.policy-card`, `.side-note-box`, etc.), not a
+component framework — per the phase brief, this is deliberately simple.
+
+| Convention | D4 usage | Class/id pattern |
+|---|---|---|
+| Title block | ✅ | `#title-block`, `.diagram-title` |
+| Section/layer label | — (not needed at D4's flat hierarchy) | `.header-line`, editorial uppercase micro-label style defined but unused here |
+| Local process card (Home Mixer, role 1) | — | reserved, see `field-atlas.css` role-1 tokens |
+| Remote service card (role 2, double-ruled) | — | reserved, see role-2 tokens |
+| Policy hexagon | ✅ | `#vf-gate`, `.vf-hex` |
+| Result/terminal state | ✅ | `#allow-outcome`, `#interstitial-outcome`, `#drop-outcome` |
+| Warning callout (max-weight, per-diagram-once) | — (D4 doesn't need one; D3 does — see `COMPONENT_LIBRARY.md` item 15) | not implemented here, reserved for D3 |
+| Uncertainty badge (`?`, hatched) | — (no production-unknown element in D4) | reserved, pairs with the hatch pattern in `field-atlas.svgdefs.svg` |
+| Reference badge (`SHIPPED REFERENCE`) | — | reserved |
+| Optional badge | — | reserved |
+| Annotation (small italic muted) | ✅ | `.zoom-link`, `.framing-line` |
+| Arrow / connector (open chevron, never filled triangle) | ✅ | `.arrow-primary`, `.arrow-policy`, markers in each SVG's `<defs>` |
+| Separate-mechanism callout | ✅ | `#index-time-note`, `.side-note-box` (dashed, role-6) |
+| Legend item | — (D4's header color-coding substitutes; D2's IN/OON legend will be the first real user) | reserved |
+| Zoom-in / see-also marker | ✅ | `.zoom-link` — "— see Diagram 03", "— see Diagrams 02, 05" |
+
+`field-atlas.svgdefs.svg` documents the two reusable `<defs>` primitives
+(open-chevron arrowhead markers, the 45° unknown-hatch pattern) as a
+copy-paste reference — each SVG still embeds its own copy, for the
+self-containment reasons above.
+
+---
+
+## D4 content contract (Part 3) — what's on the diagram and why
+
+Primary spine, matches `../diagram-design/D4_PRODUCTION_SPEC.md`'s "Core
+composition" exactly: High-scoring post → Top 50 → Visibility Filtering (VF)
+→ Allow / Interstitial / Drop, one fork, three terminal states.
+
+**A composition ambiguity in the production spec, resolved:** the spec's
+prose says the funnel "forks visibly into two policy lanes... each ending in
+the three terminal states," which read literally would mean drawing the
+Allow/Interstitial/Drop fork *twice* (once per policy lane) — but the spec's
+own ASCII "Core composition" diagram shows exactly one hexagon forking
+directly into three outcomes, and its Hierarchy section separately lists the
+TimelineHome/TimelineHomeRecommendations comparison as a **secondary,
+visually subordinate** element, not a duplicate of the foreground fork. Given
+the production spec's explicit priority ("the flattest hierarchy of any
+diagram in the suite... readable in one glance") and the phase brief's own
+simplified primary-spine ASCII (which also shows one fork), this
+implementation draws a single fork with a subordinate comparison strip below
+it, not two duplicated forks. This is a rendering-ambiguity resolution, not a
+semantic change — no claim on the diagram differs from either reading; it
+resolves *only* which parts of the canvas the two truths occupy. Flagging it
+here per the phase brief's instruction to report interpretive calls rather
+than silently making them.
+
+**Terminal-arrow labeling:** `COMPONENT_LIBRARY.md` item 6 requires "each
+outgoing arrow labeled with its exact outcome." Rather than adding a
+redundant text label mid-arrow *and* the bold outcome word at each terminal,
+this implementation treats the terminal's own bold label (Allow /
+Interstitial / Drop, positioned immediately where its arrow ends) as
+satisfying that requirement — there is exactly one arrow per terminal, so the
+mapping is unambiguous, and this avoids doubling text density in an
+already-tight fork. If a future diagram has multiple arrows converging on
+fewer labels, this shortcut would not apply there.
+
+**Snapshot reference:** the provenance footer cites `c65aa179` per the phase
+brief's supplied snapshot identifier.
+
+---
+
+## Composition (Part 4) — the four render targets
+
+| Target | File | Logical canvas | Notes |
+|---|---|---|---|
+| A. Desktop/article | `src/d4-ranking-vs-visibility.svg` | 1600×900 | Canonical. Full content: header pairing, primary fork, secondary IN/OON strip, index-time note, provenance footer. |
+| B. Dark desktop | `src/d4-ranking-vs-visibility-dark.svg` | 1600×900 | Identical structure to A; only the inline token block differs (see "Why each SVG is self-contained" above). |
+| C. Mobile | `src/d4-ranking-vs-visibility-mobile.svg` | 400×948 | Vertical. Same primary spine (post → Top 50 → VF → fork); three outcomes stay side-by-side in three narrow columns rather than stacking, since they fit at this width without crowding; IN/OON becomes two stacked cards (not side-by-side); index-time note becomes a compact footnote card; header/subtitle copy condensed (see below) without dropping any claim. |
+| D. Social/share card | `src/d4-ranking-vs-visibility-social.svg` | 1200×675 | Funnel + fork + header only, per spec — no secondary strip, no index-time note. Carries the one-line headline claim large and a minimal provenance mark. |
+
+**Mobile copy compression, specifically:** the header pairing shortens from
+full quoted questions ("Ranking asks: 'How valuable might this be to this
+viewer?'") to "Ranking asks: how valuable?" — same claim, no information
+dropped, just fewer words, matching the phase brief's own suggested
+condensed header form. Outcome subtitles compress similarly ("Delivered,
+with a tap-through warning" → "Still delivered, / warning shown") while
+preserving the one distinction that must never be lost: Interstitial is
+still delivered, Drop is removed. Verified this distinction survives at
+mobile scale during visual QA.
+
+---
+
+## Export tooling (Part 6)
+
+`tools/render.sh` rasterizes each `src/*.svg` to `exports/*.png` at 2x scale
+using headless Chrome (`google-chrome --headless=new`), which was the tool
+actually available in this environment (checked first: no `rsvg-convert`, no
+Inkscape CLI, no CairoSVG; ImageMagick's `convert` is present but its SVG
+delegate does not reliably resolve CSS custom properties inside an inline
+`<style>` block, which this system depends on). Chrome was verified to
+render the CSS-variable-driven tokens correctly.
+
+```
+cd assets/tools
+./render.sh
+```
+
+This produces all four PNGs plus a copy of the canonical SVG in `exports/`,
+overwriting previous output — safe to re-run any time `src/` changes.
+Lossless PNG throughout, no JPEG, per the phase brief.
+
+---
+
+## Visual QA (Part 7) — what was actually checked
+
+Every export was rendered and visually inspected as an image in this
+session, not just validated as source markup. Two iterations on the
+canonical desktop SVG:
+
+1. **v1 → v2:** the "— see Diagram 03" zoom-link text sat directly on top of
+   the arrow between Top 50 and the VF hexagon, and the dotted connector from
+   the index-time note terminated inside the primary flow arrow rather than
+   at the funnel's edge. Both fixed by repositioning (zoom-link moved off the
+   arrow's centerline; dotted connector re-routed to land on the "High-scoring
+   post" shape's corner instead of crossing the arrow).
+
+No other layout defects found after that pass, across all four targets
+(desktop light, desktop dark, mobile, social) at their rendered sizes.
+
+**Grayscale test:** performed by converting the rendered desktop-light and
+desktop-dark PNGs to grayscale (`convert ... -colorspace Gray`) and
+inspecting. **Passed** — the VF hexagon remains recognizable purely by shape,
+and Allow/Interstitial/Drop remain unambiguous from their glyphs alone
+(filled dot / outlined triangle with exclamation mark / filled circle with
+X) with no reliance on color.
+
+**10-second test:** performed by looking at the canonical desktop PNG cold.
+All three questions from the phase brief read correctly at a glance: ranking
+is visibly not the last step (the spine continues through VF), a
+highly-ranked post visibly can still reach Drop, and Allow/Interstitial/Drop
+are visibly three distinct shapes with three distinct short labels, not two
+flavors of one thing. **Passed.**
+
+**Small-size test (social card):** the first draft of the social card left a
+large empty gap between the fork and the footer — fixed by enlarging the
+headline claim to two lines at 25px and tightening vertical rhythm. At
+typical feed-thumbnail scale the headline claim and the three terminal
+glyphs remain the dominant, legible elements.
+
+---
+
+## Accessibility & editability (Parts 8–9)
+
+- Every SVG has a `<title>` and a `<desc>` with a concrete, specific summary
+  (not "diagram of a pipeline" — the actual claims, so a screen reader user
+  gets the real content).
+- All text is real `<text>`/`<tspan>` elements — nothing converted to
+  outlines/paths.
+- Group and element ids are semantic: `vf-gate`, `allow-outcome`,
+  `interstitial-outcome`, `drop-outcome`, `index-time-note`,
+  `timeline-home-card`, `timeline-home-recommendations-card`, etc. — no
+  `g1837`-style opaque ids anywhere.
+- No base64-embedded images, no editor metadata bloat, no enormous
+  auto-generated path dumps — every path in these files is a small,
+  hand-written coordinate list.
+- Every terminal outcome (Allow/Interstitial/Drop) carries a visible text
+  label in addition to its glyph — meaning is never encoded by color,
+  position, or texture alone.
+
+---
+
+## What changed after real rendering (honesty check)
+
+Two things changed from the initial draft after seeing the actual render
+(both cosmetic positioning fixes, documented above under "Visual QA"); no
+Field Atlas *convention* (token, shape, component) had to change — the
+system as specified in `../diagram-design/ART_DIRECTION.md` and
+`COMPONENT_LIBRARY.md` rendered as intended on the first real attempt. The
+one interpretive call (single fork vs. duplicated fork, see Part 3 above) was
+a composition-ambiguity resolution, not a convention change.

@@ -241,3 +241,23 @@ interpretation, just promoting an already-established claim to the reusable bank
    suite).
 3. Do not start G1 or any myth page until at least D1 and D4 exist as real assets — both
    are listed prerequisites in `../ROADMAP.md` for exactly that content.
+
+---
+
+## Phase 2B.1 status — production order: D4 → D1 → D2 → D3
+
+**D4 is implemented.** The Field Atlas visual system (design tokens, reusable SVG
+component conventions, color/shape/type rules from this directory's specs) is built and
+rendered for real, in `../assets/`, not just specified. Desktop light, desktop dark,
+mobile, and social-card renders all exist for D4 and have been visually QA'd — see
+`../assets/README.md` for the full implementation record, including the one composition
+ambiguity in `D4_PRODUCTION_SPEC.md` that this pass had to resolve (documented there, not
+a semantic change).
+
+**D1 has NOT started.** No `../assets/src/d1-*` files exist. Per the phase brief for
+2B.1, D4 and the shared Field Atlas framework were deliberately scoped as a standalone
+prototype, to be reviewed before scaling the same system to D1's fifteen-stage, three-tier
+composition. Do not begin D1 implementation until that review happens.
+
+D2 and D3 remain at PRODUCTION SPEC status in this directory — unstarted as assets,
+same as D1.

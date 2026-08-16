@@ -1,0 +1,214 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900"
+  role="img" aria-labelledby="d4-title d4-desc" font-family="Inter, ui-sans-serif, system-ui, sans-serif">
+  <title id="d4-title">Diagram 4 — Ranking vs. Visibility Filtering</title>
+  <desc id="d4-desc">
+    A high-scoring post makes the Top 50, then passes through Visibility
+    Filtering, a separate policy gate that runs after ranking is finished, per
+    viewer and per post. The gate produces one of three outcomes: Allow (the
+    post can continue toward the feed), Interstitial (the post is still
+    delivered, with a tap-through warning), or Drop (the post is removed and
+    never reaches the client, regardless of score). Which policy applies —
+    the more permissive TimelineHome for in-network posts, or the stricter
+    TimelineHomeRecommendations for out-of-network posts — depends on the
+    post's relationship to the viewer; both policies can produce all three
+    outcomes. A separate, earlier mechanism can also exclude a post from the
+    retrieval corpus entirely, before any viewer's request, independent of
+    this per-request check.
+  </desc>
+
+  <!--
+    Field Atlas tokens (inline copy — see ../field-atlas.css for the
+    canonical, documented source; keep values in sync when the palette
+    changes). Dark mode: same hue families as the light variant, only
+    lightness/saturation shift — see field-atlas.css's dark-mode block for
+    the same values under the maintained source of truth.
+  -->
+  <style>
+    :root {
+      --color-background: #17140f;
+      --color-paper: #201c15;
+      --color-ink: #f2ede0;
+      --color-ink-muted: #b0a68f;
+      --color-rule: #3a3327;
+
+      --role-4-fill: #4a3d70;
+      --role-4-stroke: #a493d1;
+
+      --role-5-stroke: #e2794a;
+
+      --role-6-stroke: #c98fa0;
+
+      --outcome-allow: var(--color-ink);
+      --outcome-policy: var(--role-5-stroke);
+    }
+
+    text { fill: var(--color-ink); }
+    .font-technical { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .font-editorial { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .ink-muted { fill: var(--color-ink-muted); }
+    .italic { font-style: italic; }
+
+    .diagram-title { font-size: 25px; font-weight: 700; }
+    .header-line { font-size: 21px; font-weight: 600; }
+    .header-accent-rank { fill: var(--role-4-stroke); }
+    .header-accent-vis { fill: var(--role-5-stroke); }
+
+    .funnel-shape { fill: var(--role-4-fill); stroke: var(--role-4-stroke); stroke-width: 2; }
+    .funnel-label { font-size: 17px; font-weight: 600; }
+    .top50-label { font-size: 18px; font-weight: 700; }
+    .funnel-subtitle { font-size: 12px; }
+    .zoom-link { font-size: 10.5px; font-style: italic; fill: var(--color-ink-muted); }
+
+    .arrow-primary { stroke: var(--color-ink); stroke-width: 3; fill: none; marker-end: url(#arrow-primary-head); }
+    .arrow-policy { stroke: var(--outcome-policy); stroke-width: 2.5; fill: none; marker-end: url(#arrow-policy-head); }
+    .arrow-dotted { stroke: var(--color-ink-muted); stroke-width: 1.4; fill: none; stroke-dasharray: 1 4; stroke-linecap: round; }
+
+    .vf-hex { fill: var(--color-background); stroke: var(--role-5-stroke); stroke-width: 3; }
+    .vf-name { font-size: 19px; font-weight: 700; }
+    .vf-subtitle { font-size: 13.5px; font-weight: 600; }
+
+    .outcome-label { font-size: 18px; font-weight: 700; }
+    .outcome-subtitle { font-size: 12px; }
+
+    .policy-card { fill: var(--color-paper); stroke: var(--color-rule); stroke-width: 1.5; }
+    .policy-title { font-size: 15px; font-weight: 700; }
+    .policy-subtitle { font-size: 12.5px; font-weight: 600; }
+    .policy-detail { font-size: 10.8px; }
+
+    .side-note-box { fill: var(--color-paper); stroke: var(--role-6-stroke); stroke-width: 1.5; stroke-dasharray: 5 4; }
+    .side-note-badge { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; fill: var(--role-6-stroke); }
+    .side-note-text { font-size: 10.8px; font-style: italic; fill: var(--color-ink-muted); }
+
+    .framing-line { font-size: 11.5px; font-style: italic; fill: var(--color-ink-muted); }
+    .provenance { font-size: 10.5px; fill: var(--color-ink-muted); }
+  </style>
+
+  <defs>
+    <marker id="arrow-primary-head" viewBox="0 0 12 12" refX="9.5" refY="6"
+      markerWidth="8.5" markerHeight="8.5" orient="auto-start-reverse">
+      <path d="M1,1 L10,6 L1,11" fill="none" stroke="var(--color-ink)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    </marker>
+    <marker id="arrow-policy-head" viewBox="0 0 12 12" refX="9.5" refY="6"
+      markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M1,1 L10,6 L1,11" fill="none" stroke="var(--outcome-policy)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    </marker>
+  </defs>
+
+  <!-- background -->
+  <rect x="0" y="0" width="1600" height="900" fill="var(--color-background)" />
+
+  <!-- title -->
+  <g id="title-block">
+    <text x="60" y="50" class="font-editorial diagram-title">Diagram 4 — Ranking vs. Visibility Filtering</text>
+  </g>
+
+  <!-- header pairing: the diagram's real headline -->
+  <g id="header-pairing" text-anchor="middle">
+    <text x="800" y="98" class="font-editorial header-line">
+      <tspan class="header-accent-rank">Ranking</tspan> asks: “How valuable might this be to this viewer?”
+    </text>
+    <text x="800" y="130" class="font-editorial header-line">
+      <tspan class="header-accent-vis">Visibility</tspan> asks: “What treatment is allowed, in this context?”
+    </text>
+  </g>
+
+  <!-- primary funnel + fork -->
+  <g id="primary-spine">
+    <!-- High-scoring post -->
+    <g id="high-scoring-post">
+      <polygon class="funnel-shape" points="590,178 1010,178 950,230 650,230" />
+      <text x="800" y="210" text-anchor="middle" class="font-editorial funnel-label">High-scoring post</text>
+    </g>
+
+    <path class="arrow-primary" d="M800,230 L800,262" />
+
+    <!-- Top 50 -->
+    <g id="top-50">
+      <polygon class="funnel-shape" points="650,266 950,266 895,336 705,336" />
+      <text x="800" y="298" text-anchor="middle" class="font-technical top50-label">Top 50</text>
+      <text x="800" y="318" text-anchor="middle" class="font-editorial funnel-subtitle ink-muted">Made the cut by score</text>
+    </g>
+    <text x="965" y="358" text-anchor="start" class="font-editorial zoom-link">— see Diagram 03</text>
+
+    <path class="arrow-primary" d="M800,336 L800,386" />
+
+    <!-- Visibility Filtering gate -->
+    <g id="vf-gate">
+      <polygon class="vf-hex" points="560,455 630,390 970,390 1040,455 970,520 630,520" />
+      <text x="800" y="440" text-anchor="middle" class="font-technical vf-name">Visibility Filtering (VF)</text>
+      <text x="800" y="464" text-anchor="middle" class="font-editorial vf-subtitle">Runs after ranking, per viewer, per post</text>
+    </g>
+
+    <!-- fork arrows, orthogonal routing -->
+    <path class="arrow-policy" d="M680,520 L680,552 L330,552 L330,592" />
+    <path class="arrow-policy" d="M800,520 L800,592" />
+    <path class="arrow-policy" d="M920,520 L920,552 L1270,552 L1270,592" />
+
+    <!-- Allow -->
+    <g id="allow-outcome" text-anchor="middle">
+      <circle cx="330" cy="610" r="14" fill="var(--outcome-allow)" />
+      <text x="330" y="650" class="font-editorial outcome-label">Allow</text>
+      <text x="330" y="670" class="font-editorial outcome-subtitle ink-muted">Can continue toward the feed</text>
+    </g>
+
+    <!-- Interstitial -->
+    <g id="interstitial-outcome" text-anchor="middle">
+      <polygon points="800,590 780,626 820,626" fill="var(--color-background)" stroke="var(--outcome-policy)" stroke-width="2.5" stroke-linejoin="round" />
+      <line x1="800" y1="603" x2="800" y2="614" stroke="var(--color-ink)" stroke-width="2.2" stroke-linecap="round" />
+      <circle cx="800" cy="620" r="1.7" fill="var(--color-ink)" />
+      <text x="800" y="650" class="font-editorial outcome-label">Interstitial</text>
+      <text x="800" y="670" class="font-editorial outcome-subtitle ink-muted">Delivered, with a tap-through warning</text>
+    </g>
+
+    <!-- Drop -->
+    <g id="drop-outcome" text-anchor="middle">
+      <circle cx="1270" cy="610" r="16" fill="var(--outcome-policy)" />
+      <line x1="1262" y1="602" x2="1278" y2="618" stroke="var(--color-background)" stroke-width="2.4" stroke-linecap="round" />
+      <line x1="1278" y1="602" x2="1262" y2="618" stroke="var(--color-background)" stroke-width="2.4" stroke-linecap="round" />
+      <text x="1270" y="650" class="font-editorial outcome-label">Drop</text>
+      <text x="1270" y="670" class="font-editorial outcome-subtitle ink-muted">Removed — never reaches the client,</text>
+      <text x="1270" y="686" class="font-editorial outcome-subtitle ink-muted">regardless of score</text>
+    </g>
+  </g>
+
+  <!-- secondary layer: IN/OON policy comparison -->
+  <g id="secondary-policy-layer" text-anchor="middle">
+    <text x="800" y="720" class="font-editorial framing-line">Which policy applies depends on the post's network status relative to the viewer:</text>
+
+    <g id="timeline-home-card">
+      <rect class="policy-card" x="430" y="734" width="350" height="82" rx="8" />
+      <text x="605" y="760" class="font-technical policy-title">TimelineHome</text>
+      <text x="605" y="780" class="font-editorial policy-subtitle">In-network policy</text>
+      <text x="605" y="797" class="font-editorial policy-detail ink-muted">Mainly account-state issues, blocks/mutes,</text>
+      <text x="605" y="810" class="font-editorial policy-detail ink-muted">legal takedowns, hard NSFW cases</text>
+    </g>
+
+    <g id="timeline-home-recommendations-card">
+      <rect class="policy-card" x="820" y="734" width="350" height="82" rx="8" />
+      <text x="995" y="760" class="font-technical policy-title" font-size="13.5">TimelineHomeRecommendations</text>
+      <text x="995" y="780" class="font-editorial policy-subtitle">Out-of-network policy — stricter</text>
+      <text x="995" y="797" class="font-editorial policy-detail ink-muted">Everything TimelineHome checks, plus</text>
+      <text x="995" y="810" class="font-editorial policy-detail ink-muted">~2 dozen additional drop rules</text>
+    </g>
+
+    <text x="800" y="833" class="font-editorial framing-line">Recommendation/OON policy covers more drop cases — not a claim that OON content is unsafe.</text>
+  </g>
+
+  <!-- index-time safety note: a separate, earlier mechanism, deliberately not part of the fork -->
+  <g id="index-time-note">
+    <rect class="side-note-box" x="1230" y="168" width="330" height="122" rx="8" />
+    <text x="1250" y="190" class="font-technical side-note-badge">SEPARATE MECHANISM</text>
+    <text x="1250" y="210" class="font-editorial side-note-text">Some posts can be excluded before</text>
+    <text x="1250" y="224" class="font-editorial side-note-text">request-time ranking even begins,</text>
+    <text x="1250" y="238" class="font-editorial side-note-text">through Phoenix's index-admission /</text>
+    <text x="1250" y="252" class="font-editorial side-note-text">index-time safety check.</text>
+    <text x="1250" y="272" class="font-editorial side-note-text">— see Diagrams 02, 05</text>
+    <path class="arrow-dotted" d="M1230,240 C1140,225 1080,208 1012,196" />
+  </g>
+
+  <!-- provenance -->
+  <g id="provenance-footer" text-anchor="middle">
+    <text x="800" y="864" class="font-editorial provenance">Based on xai-org/x-algorithm public snapshot c65aa179</text>
+    <text x="800" y="880" class="font-editorial provenance italic">Source-grounded reconstruction — not a claim about current live configuration.</text>
+  </g>
+</svg>

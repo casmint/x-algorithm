@@ -60,7 +60,12 @@ Phase 2+ groundwork first).
 - **Primary danger:** conflating Interstitial with Drop; conflating index-time exclusion
   with per-request VF.
 - **Prerequisites:** D3.
-- **Priority:** P0 · **Status:** WIREFRAME (`diagrams/04-ranking-vs-visibility.md`)
+- **Priority:** P0 · **Status:** REVIEWED (`assets/src/d4-ranking-vs-visibility*.svg` —
+  desktop light/dark, mobile, and social renders all exist and have been visually
+  QA'd — 10-second test, grayscale test, small-size test — against
+  `diagram-design/D4_PRODUCTION_SPEC.md`, `CLAIM_BANK.md`, and `EDITORIAL_RULES.md`; see
+  `assets/README.md`. Not yet FINAL — awaits a human visual sign-off pass beyond this
+  phase's self-QA before publication polish.)
 
 ### D5. Safety/reputation signal flow
 - **Purpose:** make the codename ecosystem navigable without conflating similar names.

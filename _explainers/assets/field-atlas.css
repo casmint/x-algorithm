@@ -1,0 +1,158 @@
+/*
+  Field Atlas — design tokens
+  Canonical source for the visual system described in
+  ../diagram-design/ART_DIRECTION.md and ../diagram-design/COMPONENT_LIBRARY.md.
+
+  This file is the documented source of truth. Because SVG assets in src/ must
+  remain self-contained (portable as <img>, embeddable, convertible to PNG
+  without external stylesheet fetches), each SVG carries its own inline copy
+  of the tokens it actually uses inside a <style> block. If a token value
+  changes here, update it in every SVG's inline <style> too — see
+  assets/README.md, "Keeping tokens in sync."
+
+  Two typefaces, two voices — never mixed within one label line's role:
+  --font-technical  = codenames, component names, field names ("what the
+                       source code calls it")
+  --font-editorial   = titles, subtitles, walkthrough copy, annotations
+                       ("what it means")
+*/
+
+:root {
+  /* ---- base tokens (paper / ink) ---- */
+  --font-editorial: Inter, ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-technical: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", monospace;
+
+  --color-background: #f6f2ea; /* page/canvas background — warm paper */
+  --color-paper: #fffdf8;      /* card/panel surface, slightly lighter than bg */
+  --color-ink: #2b241c;        /* primary text/stroke ink */
+  --color-ink-muted: #6f6656;  /* secondary text, annotations */
+  --color-rule: #d9d2c2;       /* hairline dividers, inactive borders */
+
+  /* ---- role 1: Home Mixer / local logic (warm sand/ochre) ---- */
+  --role-1-fill: #e8d5ad;
+  --role-1-ink: var(--color-ink);
+
+  /* ---- role 2: Remote model / service (cool slate-blue) ---- */
+  --role-2-stroke: #3f5872;
+  --role-2-fill: transparent;
+
+  /* ---- role 3: Retrieval (teal/cyan) ---- */
+  --role-3-fill: #cfe3e0;
+  --role-3-stroke: #2f6e68;
+
+  /* ---- role 4: Ranking / score (violet/indigo) ---- */
+  --role-4-fill: #ddd3ee;
+  --role-4-stroke: #5b4a8a;
+  --role-4-pill-fill: #7c65ad;
+  --role-4-pill-ink: #fffdf8;
+
+  /* ---- role 5: Visibility / policy (warm red-orange — hexagon-exclusive) ---- */
+  --role-5-stroke: #b3491f;
+
+  /* ---- role 6: Background safety / reputation (muted plum) ---- */
+  --role-6-stroke: #7c4a5c;
+  --role-6-fill: transparent;
+
+  /* ---- role 7: Data / state / cache (cool slate-gray) ---- */
+  --role-7-fill: #d7d9d6;
+
+  /* ---- role 10: Ads / non-organic (muted gold/amber) ---- */
+  --role-10-fill: #ecd9a0;
+
+  /* ---- modifiers (never a hue of their own) ---- */
+  --hatch-line: var(--color-ink); /* 45deg hairlines, low opacity, over existing fill */
+  --hatch-opacity: 0.16;
+  --dash-pattern: 6 5; /* optional/gated stroke-dasharray, in the node's own role color */
+
+  /* ---- terminal outcomes: Allow / Interstitial / Drop ----
+     Per ART_DIRECTION.md role 5: color is never the sole signal for these three
+     outcomes — each also gets a distinct terminal glyph (filled dot / warning
+     triangle / X-in-circle). Allow is the least consequential outcome and stays
+     plain ink; Interstitial and Drop are policy consequences of the VF hexagon
+     itself, so both carry the role-5 red-orange family, differentiated by
+     stroke weight and fill rather than by a fourth invented hue. */
+  --outcome-allow: var(--color-ink);
+  --outcome-interstitial: var(--role-5-stroke);
+  --outcome-drop: var(--role-5-stroke);
+  --outcome-drop-fill: var(--role-5-stroke);
+
+  /* ---- badges (neutral ink, never a role hue) ---- */
+  --badge-stroke: var(--color-ink-muted);
+  --badge-ink: var(--color-ink-muted);
+
+  /* ---- arrows ---- */
+  --arrow-primary: var(--color-ink);      /* thick candidate/feed flow */
+  --arrow-request: var(--color-ink-muted); /* thin request/call */
+  --arrow-policy: var(--role-5-stroke);    /* arrows leaving the VF hexagon */
+}
+
+/* ---- dark mode ----
+   Hue families stay constant; only lightness/saturation shift. Never invert
+   role 1 (warm) to a cool hue — warmth is the identifying signal. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-background: #17140f;
+    --color-paper: #201c15;
+    --color-ink: #f2ede0;
+    --color-ink-muted: #b0a68f;
+    --color-rule: #3a3327;
+
+    --role-1-fill: #6b5327;
+    --role-1-ink: var(--color-ink);
+
+    --role-2-stroke: #7fa0bf;
+
+    --role-3-fill: #2b4d49;
+    --role-3-stroke: #6fb0a8;
+
+    --role-4-fill: #4a3d70;
+    --role-4-stroke: #a493d1;
+    --role-4-pill-fill: #9784c9;
+    --role-4-pill-ink: #17140f;
+
+    --role-5-stroke: #e2794a;
+
+    --role-6-stroke: #c98fa0;
+
+    --role-7-fill: #4a4d49;
+
+    --role-10-fill: #b99a4a;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-background: #17140f;
+  --color-paper: #201c15;
+  --color-ink: #f2ede0;
+  --color-ink-muted: #b0a68f;
+  --color-rule: #3a3327;
+
+  --role-1-fill: #6b5327;
+  --role-1-ink: var(--color-ink);
+
+  --role-2-stroke: #7fa0bf;
+
+  --role-3-fill: #2b4d49;
+  --role-3-stroke: #6fb0a8;
+
+  --role-4-fill: #4a3d70;
+  --role-4-stroke: #a493d1;
+  --role-4-pill-fill: #9784c9;
+  --role-4-pill-ink: #17140f;
+
+  --role-5-stroke: #e2794a;
+
+  --role-6-stroke: #c98fa0;
+
+  --role-7-fill: #4a4d49;
+
+  --role-10-fill: #b99a4a;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-ink);
+  font-family: var(--font-editorial);
+}

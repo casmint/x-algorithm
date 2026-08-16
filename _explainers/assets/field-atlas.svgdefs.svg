@@ -1,0 +1,46 @@
+<!--
+  Field Atlas — reusable SVG defs reference.
+
+  This file is a copy-paste SOURCE for future diagrams (D1-D3), not something
+  linked at render time. Because each diagram SVG must stay self-contained
+  (portable as <img src>, embeddable, convertible to PNG without external
+  fetches — see assets/README.md), every diagram embeds its own copy of the
+  defs it actually uses inside its own <defs> block. Keep those copies in sync
+  with this file when a convention changes.
+
+  Conventions defined here:
+    - #arrow-open-chevron   — open chevron arrowhead (never a filled triangle,
+                              per ART_DIRECTION.md's shape language)
+    - #hatch-unknown        — 45deg hairline pattern, role-8 "production
+                              unknown" modifier, layered over an existing fill
+    - #dash-optional        — stroke-dasharray reference for role-9 "optional /
+                              feature-gated" modifier (documented as a value,
+                              not a def — dasharray is set per-element)
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0">
+  <defs>
+    <!-- Open chevron arrowhead. Usage: marker-end="url(#arrow-open-chevron)"
+         on a <path> or <line> with fill:none. -->
+    <marker id="arrow-open-chevron" viewBox="0 0 12 12" refX="10" refY="6"
+      markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M1,1 L10,6 L1,11" fill="none" stroke="currentColor"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+    </marker>
+
+    <!-- Policy-weight open chevron: same shape, used at the end of the three
+         arrows leaving a role-5 hexagon (heavier stroke). -->
+    <marker id="arrow-open-chevron-heavy" viewBox="0 0 12 12" refX="10" refY="6"
+      markerWidth="10" markerHeight="10" orient="auto-start-reverse">
+      <path d="M1,1 L10,6 L1,11" fill="none" stroke="currentColor"
+        stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" />
+    </marker>
+
+    <!-- 45deg hairline hatch, role-8 "production unknown" modifier. Apply as
+         a second fill on top of a shape already carrying its own role fill:
+         <rect fill="url(#hatch-unknown)" opacity="0.16" .../> -->
+    <pattern id="hatch-unknown" patternUnits="userSpaceOnUse" width="8" height="8"
+      patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="8" stroke="currentColor" stroke-width="1" />
+    </pattern>
+  </defs>
+</svg>
