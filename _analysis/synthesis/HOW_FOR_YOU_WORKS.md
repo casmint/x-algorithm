@@ -37,38 +37,55 @@ compute a final score by itself, it does not decide whether a post is safe to sh
 and it has no say over ads, "Who to Follow" modules, or the other non-post items that
 appear interleaved in your feed. Phoenix predicts; other systems decide.
 
-The system that actually assembles your feed is called **Home Mixer**, and it is best
-understood as a conductor coordinating several distinct sections of an orchestra, each
-with its own job:
+The system that actually assembles your feed is called **Home Mixer**, and the orchestra
+metaphor needs one important twist to be accurate: some sections are musicians Home Mixer
+directs from a distance, over a call, and others are its own hands playing an instrument
+directly. Mixing up which is which — assuming everything Home Mixer touches is a remote
+call, or that Home Mixer itself does no ranking or filtering — is the easiest way to
+misunderstand this system:
 
-- **Home Mixer** is the orchestrator. It receives your request, gathers everything it
-  needs to know about you, calls out to the other systems below in a specific order, and
-  assembles the final response.
+- **Home Mixer** is the orchestrator, and it's more than a conductor waving a baton — a
+  substantial share of the actual work happens *inside* the Home Mixer process itself, as
+  ordinary code, not as a call to some other service. It receives your request, gathers
+  everything it needs to know about you, and both runs local logic and calls out to remote
+  services, in a specific order, to assemble the final response.
 - **Retrieval systems** (seven of them, described in the next section) go find posts that
-  *might* be worth showing you. This is a pool-building step, not a ranking step.
-- **Phoenix ranking** takes that pool and predicts, for each post, the probability you'll
-  do each of roughly two dozen different things with it.
-- **RankingScorer** converts those predictions into a single number per post by
-  multiplying each predicted probability by a weight and summing the results, then layers
-  on adjustments for things like how many posts from the same author already rank above
-  it.
-- **VMRanker**, running the **DPP** (determinantal point process) algorithm, takes the
-  already-scored list and can re-select a diverse subset from it, so your feed isn't
-  dominated by five near-duplicate posts about the same topic.
-- **Visibility filtering** is a completely separate check, run after ranking, that decides
-  whether a given post is even allowed to reach you at all — a post can score extremely
-  well and still never be shown.
-- **BlenderSelector** takes the surviving, ranked organic posts and weaves in ads, "Who to
-  Follow" suggestions, prompts, push-to-home content, and other non-post items to build
-  the response you actually receive.
-- **Safety and reputation systems** — Agatha, BDSM, UserCredV2, Grox, Botmaker/Scarecrow,
-  abuse-enforcement-service, and Gizmoduck — don't sit in this per-request pipeline at
-  all. They run continuously, in the background, producing labels and account state that
-  visibility filtering and other systems consume when a request does come in.
+  *might* be worth showing you. This is a pool-building step, not a ranking step. Their
+  backing mechanism varies source by source — some are calls to separate services, one
+  re-serves from an in-process cache — covered in §3.
+- **Phoenix ranking** — a remote call — takes that pool and predicts, for each post, the
+  probability you'll do each of roughly two dozen different things with it.
+- **RankingScorer runs locally, inside Home Mixer, with no remote call.** It converts
+  Phoenix's predictions into a single number per post by multiplying each predicted
+  probability by a weight and summing the results, then layers on adjustments for things
+  like how many posts from the same author already rank above it. The filters that run
+  before and after it are the same way: Home Mixer's own local removal logic, not calls to
+  anywhere else.
+- **VMRanker** — a remote call to a separate service — runs the **DPP** (determinantal
+  point process) algorithm, taking the already-scored list and re-selecting a diverse
+  subset from it, so your feed isn't dominated by five near-duplicate posts about the same
+  topic.
+- **Visibility filtering** — another remote call — is a completely separate check, run
+  after ranking, that decides whether a given post is even allowed to reach you at all — a
+  post can score extremely well and still never be shown.
+- **BlenderSelector**, back inside Home Mixer itself, takes the surviving, ranked organic
+  posts and weaves in ads, "Who to Follow" suggestions, prompts, push-to-home content, and
+  other non-post items to build the response you actually receive.
+- **Safety and reputation systems** — Agatha, BDSM, UserCredV2, Grox, and
+  Botmaker/Scarecrow/abuse-enforcement-service — mostly don't sit in this per-request
+  pipeline at all: they run continuously, in the background, producing labels and account
+  state that visibility filtering and other systems consume when a request does come in
+  (we'll unpack each of these individually in §10). **Gizmoduck is the exception**, not a
+  member of that background group: it's a live account-state service that Home Mixer's
+  query construction and visibility filtering both query synchronously, on every single
+  request.
 
-Keeping these as separate systems in your head, rather than collapsing them into "the
-algorithm," is the single most useful thing this document can give you before the detail
-starts.
+The distinction worth holding onto isn't just "Phoenix is not the algorithm" — it's three
+separate categories: **Home Mixer the orchestrator**, the **local, in-process logic it
+runs directly** (RankingScorer, most filters, BlenderSelector), and the **remote services
+it calls out to** (retrieval sources, Phoenix, VMRanker, visibility filtering). Keeping
+those three apart, rather than collapsing everything into "the algorithm," is the single
+most useful thing this document can give you before the detail starts.
 
 *Primary evidence: S01 (Home Mixer orchestration), Rapid 01–04 (per-system detail).*
 
@@ -91,7 +108,8 @@ exactly.
  what have they recently done, what feature-switch bucket are they in
         |                                          (mostly concurrent lookups)
         v
- seven candidate sources run at once, each contributing posts to one pool
+ up to seven candidate sources run at once — whichever are enabled for this
+ request — each contributing posts to one pool
         |                                          (concurrent)
         v
  candidate hydration: fill in details about each candidate (block/mute state,
@@ -101,7 +119,7 @@ exactly.
  pre-scoring filters: remove posts that should never reach a scorer at all
  (duplicates, self-tweets, blocked authors, muted keywords, a specific legal
  exclusion list, subscriber-only content you can't see, etc.)
-        |                                          (sequential, sixteen-plus filters
+        |                                          (sequential, eighteen filters
         |                                           in a fixed declared order)
         v
  Phoenix predicts your likely reactions to each surviving candidate
@@ -134,12 +152,13 @@ exactly.
 ```
 
 A few things about this diagram are worth calling out precisely, because they're the
-parts most likely to be mischaracterized. The seven candidate sources genuinely run at
-the same time and their results are simply concatenated — there's no interleaving quota
-or priority order at that step, so which source found a post has no bearing on its final
-rank. The pre-scoring filters and the three scorers, by contrast, run strictly one after
-another in a fixed declared order, because each one can depend on state a previous stage
-set. Visibility filtering happens *after* the ranked list has already been narrowed to
+parts most likely to be mischaracterized. Whichever of the seven candidate sources are
+enabled for a given request genuinely run at the same time and their results are simply
+concatenated — there's no interleaving quota or priority order at that step, so which
+source found a post has no bearing on its final rank. The pre-scoring filters and the
+three scorers, by contrast, run strictly one after another in a fixed declared order,
+because each one can depend on state a previous stage set. Visibility filtering happens
+*after* the ranked list has already been narrowed to
 the top 50 — it does not run on the whole candidate pool, only on the posts that already
 made the cut on quality grounds. And the whole organic pipeline above (everything up to
 "truncated to 35") is itself just one of several sources feeding a second, outer pipeline
@@ -157,10 +176,13 @@ makes retrieval the least glamorous and most consequential part of the system: i
 the ceiling on what your feed can possibly contain, no matter how good the ranking model
 is.
 
-`PhoenixCandidatePipeline` — the pipeline behind a normal For You request — runs seven
-sources concurrently every time it executes. Two default to disabled and won't
+`PhoenixCandidatePipeline` — the pipeline behind a normal For You request — defines seven
+candidate sources. For each request, it evaluates every source's own enable condition
+first, then runs whichever sources are enabled concurrently among themselves; a disabled
+source simply doesn't run, contributing nothing. Two default to disabled and won't
 necessarily contribute anything unless a feature switch turns them on; the rest run by
-default.
+default, subject to further per-source gates described below (and, for cache mode's
+effect on all six live sources at once, in §13).
 
 | Source | In/out of network | What it does | Enabled by default? |
 |---|---|---|---|
@@ -201,11 +223,18 @@ admitted into a retrieval index at all. This decision happens once per post, for
 future viewer, entirely independent of any single request. Two rules matter most here and
 are genuinely surprising if you haven't seen them: **replies, retweets, and posts from
 community groups are excluded from the mainstream indices outright**, regardless of how
-much engagement they get, and a post's favorite count only re-triggers indexing when it
+much engagement they get — with one narrower exception: a separate branch triggered only
+by favorite events, `search_unfiltered`, is evaluated *before* the reply exclusion runs
+and does admit replies (though still not community posts or retweets) into that narrower
+branch. Whether `search_unfiltered` is consumed by any live Phoenix retrieval-serving path
+is unknown from this snapshot, so this isn't a claim that Phoenix definitely retrieves
+replies — only that a flat "Phoenix can never index replies" would be too strong.
+Separately, a post's favorite count only re-triggers indexing when it
 crosses a *power-of-two* threshold (1, 2, 4, 8, 16, 32...), not on every single like — so a
 post's second index update happens at its second favorite, but its third happens only at
-its fourth. Posts that fail an internal safety check are also excluded from the mainstream
-indices at this stage (more on that in the safety section below). All three Phoenix
+its fourth. Posts that fail internal safety checks are also excluded from the mainstream
+indices at this stage — there are two independent mechanisms that do this, both covered in
+the safety section below. All three Phoenix
 retrieval sources — the plain one, the topic-scoped one, and the mixture-style one — use
 the *identical* underlying dispatch mechanism; they differ only in which cluster of the
 index they query and under what conditions they're allowed to run, not in three separate
@@ -458,8 +487,10 @@ It helps to separate several places content can be excluded, because they are ge
 different mechanisms with different scopes and different failure behavior:
 
 - **Index-time exclusion** happens before any request exists at all — a post can be kept
-  out of Phoenix's retrieval index entirely, for every future viewer, based on a single,
-  viewer-less safety check run once when the post is created or newly favorited.
+  out of Phoenix's retrieval index entirely, for every future viewer, based on viewer-less
+  safety checks run once when the post is created or newly favorited. Two independent
+  mechanisms do this (Grox/UPA content-flag admission, and a separate visibility-filtering
+  check called `shouldDropPostByVF`) — both covered in §10.
 - **A pre-ranking filter** removes a candidate before Phoenix ever scores it — blocks,
   mutes, duplicates, a specific legal exclusion list, and similar checks.
 - **A ranking penalty** (the out-of-network discount, author diversity) doesn't remove a
@@ -536,6 +567,21 @@ Phoenix's index-admission logic consults when deciding whether a post is allowed
 mainstream retrieval indices at all, meaning Grox's classification can gate whether a
 post ever becomes retrievable by Phoenix, before any individual viewer's request exists.
 
+Phoenix rankall runs a **second, structurally different index-admission safety check**
+alongside the Grox/UPA one above: `shouldDropPostByVF`, a full visibility-filtering
+evaluation under the stricter `TimelineHomeRecommendations` policy, run once per post with
+no viewer at all, at the point a post is considered for the relevant Phoenix retrieval
+indices. This is *not* the ordinary per-viewer, per-request VF check described in §9 — it
+runs earlier and without a viewer, and a post it excludes cannot later be retrieved
+through the affected Phoenix indices for any viewer, though other retrieval systems
+(Thunder, SimClusters) never call VF at retrieval time and are unaffected by this check.
+Its failure behavior is specific, not a blanket rule, so it shouldn't be summarized as
+"index-time VF always fails open": a decider-lookup exception falls through to a legacy
+code path rather than proving a universal drop; a Rust-VF verdict-fetch exception
+explicitly resolves to don't-drop (fail open); a missing/`None` Rust verdict also resolves
+to don't-drop; and the legacy branch's own fetch/execution exception behavior is unknown
+from this snapshot.
+
 **Agatha** computes graph- and behavior-derived reputation scores about accounts. It has
 no direct consumer under its own formal output types anywhere in this repository — but its
 *named health-signal features* absolutely do have consumers: two checked-in Scarecrow
@@ -590,10 +636,14 @@ or posts some upstream detector already flagged, rather than evaluating every us
 every request. Its output vocabulary is small and fixed: suspend (temporary or
 permanent), add a label, or issue a challenge.
 
-**Gizmoduck** is the account-record service/store — it's where account-level safety
-flags, user labels, and fields like your follow relationships and suspension state live.
-It's a consumer and a store, not a detector itself: Scarecrow writes labels *into*
-Gizmoduck, and visibility filtering *reads* account state *from* it.
+**Gizmoduck** is the account-state service — it's where account-level safety flags, user
+labels, and suspension/deactivation state live. Unlike the systems above, it's queried
+live and synchronously on every single request, not produced in the background — both
+Home Mixer's query construction and visibility filtering's per-candidate evaluation read
+from it directly (see §1). Follow, block, and mute relationships are *not* part of
+Gizmoduck; those come from a separate social-graph client. Gizmoduck is a consumption
+point, not a detector itself: Scarecrow writes labels *into* Gizmoduck, and visibility
+filtering *reads* account state *from* it.
 
 *Primary evidence: Rapid 03 (full safety-label ecosystem, all producer-consumer chains).*
 
@@ -663,7 +713,11 @@ After the ad blend, `BlenderSelector` inserts the remaining item types at fixed 
 prompts stack at the very front, a Who to Follow module goes at a specific slot a bit
 further in, a push-to-home post (if present) gets pinned ahead of everything else, sports
 frames are slotted at computed intervals, and a feed-survey marker goes near the end of
-the visible window. None of this is a unified ranking — it's a sequence of insert
+the visible window. The execution order in code is prompts, then Who to Follow, then
+push-to-home, then frames, then the feed survey — so push-to-home is actually inserted
+*after* prompts and Who to Follow, not before them, but because it's pinned at the very
+front of the list, it displaces those earlier insertions forward by a slot rather than
+sitting behind them. None of this is a unified ranking — it's a sequence of insert
 operations at fixed positions, not a scored blend.
 
 One repair mechanism worth naming specifically: `AdAdjacentServedFilter` runs after the

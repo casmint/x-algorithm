@@ -6,11 +6,15 @@ confused with.
 
 ---
 
-**Home Mixer** — The orchestrator that assembles a For You (or Ranked Following, or
-Following) response. It doesn't rank or filter anything itself; it calls out to retrieval
-sources, Phoenix, RankingScorer, VMRanker, and visibility filtering in a fixed order and
-assembles their outputs into a response. It is *not* the same thing as Phoenix — Home
-Mixer is the conductor, Phoenix is one musician.
+**Home Mixer** — The application that orchestrates a For You (or Ranked Following, or
+Following) response end to end. It is not a thin coordinator that "calls out" for
+everything: a substantial share of the pipeline — RankingScorer's scoring, all
+pre-scoring and post-selection filters, and the selectors that assemble the final
+response — runs as ordinary code directly inside the Home Mixer process, with no RPC
+involved. Other stages genuinely are separate services Home Mixer reaches over RPC:
+retrieval sources, Phoenix, VMRanker, and visibility filtering. It is *not* the same
+thing as Phoenix — Home Mixer is the orchestrator, Phoenix is one of several things it
+calls.
 
 **Phoenix** — The machine-learning model that predicts how likely a viewer is to do
 various things (favorite, reply, retweet, report, watch, ...) with a given candidate post.
@@ -72,18 +76,24 @@ and summing, then applying author-diversity, out-of-network, and cold-start adju
 on top. Runs entirely inside Home Mixer — no external call. Not the same thing as
 Phoenix (which predicts) or VMRanker (which runs after it).
 
-**VMRanker** — A separate Rust service that runs after RankingScorer. Under its default
-configuration, it implements a DPP-based diversity selection over the already-scored list
-rather than producing an independent predictive score. Its full server-side algorithm is
-checked into this repository — it is **not** an external, unpublished system, a
-correction worth stating explicitly since an earlier reading of this material described
-it that way.
+**VMRanker** — A separate Rust service that runs after RankingScorer. Two different
+defaults matter here, and they're easy to conflate: Home Mixer's checked-in *request*
+default asks VMRanker for DPP-based diversity selection on every call, but the VMRanker
+*server's* own checked-in default (`--dpp-enabled=false`) means the server doesn't
+actually run DPP unless that flag is on — when it's off, the checked-in implementation
+just echoes the incoming scores back unchanged. See §8 for the full picture. Its full
+server-side algorithm is checked into this repository — it is **not** an external,
+unpublished system, a correction worth stating explicitly since an earlier reading of
+this material described it that way.
 
-**DPP** — Determinantal point process: the specific algorithm VMRanker uses, under its
-default mode, to select a subset of candidates that is jointly high-scoring and mutually
+**DPP** — Determinantal point process: the algorithm VMRanker's server runs, when it
+runs it, to select a subset of candidates that is jointly high-scoring and mutually
 dissimilar (as measured by embedding similarity), rather than just taking the top N by
-score. Selected candidates keep their prior score; rejected ones are returned with a
-score of exactly zero.
+score. Home Mixer's checked-in request default asks for DPP selection on every call; the
+VMRanker server's own checked-in default (`--dpp-enabled=false`) means it doesn't
+actually run unless that flag is on — see **VMRanker**. When it does run, selected
+candidates keep their prior score; rejected ones are returned with a score of exactly
+zero.
 
 **VF / Visibility Filtering** — The system that decides, per viewer and per post, whether
 a post is allowed to be shown at all — a check entirely separate from ranking. Runs after
@@ -103,11 +113,14 @@ content (and ancestors/quotes/retweets pulled in from outside the follow graph).
 Everything TimelineHome checks, plus roughly two dozen additional drop rules for spam,
 abuse, malicious URLs, and NSFW/violence labels that simply don't apply in-network.
 
-**Gizmoduck** — The account-record service/store. Holds account safety flags (suspended,
-deactivated, NSFW-flagged), user labels written by Scarecrow and other systems, and
-various account metadata and preference fields. It is a store and consumption point, not
-a detector — nothing in this repository writes new detection logic *inside* Gizmoduck
-itself.
+**Gizmoduck** — The account-state service. Unlike the genuinely background label-producing
+systems below, it's queried live and synchronously on every request — by Home Mixer's own
+query construction and, separately, by visibility filtering's per-candidate evaluation.
+Holds account safety flags (suspended, deactivated, NSFW-flagged), user labels written by
+Scarecrow and other systems, and various account metadata and preference fields — but
+*not* follow/block/mute relationships, which come from a separate social-graph client. It
+is a consumption point, not a detector — nothing in this repository writes new detection
+logic *inside* Gizmoduck itself.
 
 **Botmaker** — A general-purpose, compiled-rule event-processing engine. It is not itself
 a source of any specific rule, not a ranking system, and not the same thing as
@@ -134,9 +147,10 @@ deliberately redacted in this public release.
 
 **Grox** — An LLM-based content-understanding system that classifies posts (NSFW, gore,
 spam-like, and similar boolean flags) once they cross an engagement threshold. Its output
-feeds Phoenix's retrieval-index admission logic directly. A separate Grox rule also
-writes a tweet label consumed only by Scarecrow, independent of the retrieval-admission
-path.
+feeds Phoenix's retrieval-index admission logic directly. Separately, a checked-in
+Scarecrow rule (`GroxTweetProcessor`) consumes Grox's spam score and writes a tweet label,
+`RISKY_HIGH_VIZ_REPLY` — no downstream consumer of that label is confirmed in this
+snapshot.
 
 **UserCredV2** — A PageRank-style account credibility score computed from the real follow
 graph. The most pervasively-consumed reputation score this system traces: used directly
