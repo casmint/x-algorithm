@@ -604,24 +604,68 @@ for `PredictNextActions`/`RetrieveTopKCandidates`, `candidate_seq_len`,
 `top_k_by_key`; `find` over `phoenix/crates/serving/xai-recsys-engine`,
 `xai-recsys-server`, and `phoenix/xrex/cuda/top_k_by_key`.
 
+## Addendum: `recsys_two_tower_model.py` tail (lines 1383-1761, EOF)
+
+Follow-up pass, reading the remainder of the file left unread above. **Does not change
+any conclusion in Part B.** The tail is entirely serving/training helpers layered on top
+of the architecture already documented:
+
+- **Completes the `forward`/top-k function** (continuation of the code already excerpted
+  above, ending mid-function): confirms the dataset-sliced top-k path
+  (`use_slice_path`/`slice_and_top_k`, indices offset back by the slice start) and adds
+  one previously-unseen variant, `compute_top_k_int8` — an int8-quantized version of the
+  same dot-product search (`post_scales`-driven quantize/rescale) used as an alternative
+  to the bf16 matmul path already documented. This is a compute/memory efficiency
+  variant of the identical similarity computation, not a different algorithm or a change
+  to what the returned score means.
+- **`user_embeddings_only`**: a helper returning just the user tower's output, with no
+  candidate-side computation — not part of `RetrieveTopKCandidates`'s response
+  construction.
+- **`loss()`** (training-time only): reveals the exact, previously-unenumerated
+  `hard_negative_actions` (report, not-interested, see-fewer, unfollow-author,
+  block-author, mute-author, not-relevant) and `soft_negative_actions`
+  (recap-not-dwelled) lists for the "home" head, and confirms the "immersive" head uses
+  an identical hard/soft-negative set with only its positive-action list broadened — this
+  fills in specifics the earlier read left unnamed but does not change the previously
+  reported training-objective description.
+- **`RecsysTwoTowerModelConfig`** (the dataclass, `:1568-1761`): confirms
+  `use_post_embedding`/`use_post_sid` are properties read from the shared
+  `user_tower_config`, not independently configurable per tower — i.e. the same flags
+  documented as governing the user tower's history-item representation also govern the
+  candidate tower's inputs via `.make()`'s explicit pass-through
+  (`candidate_tower_config.make(..., use_post_embedding=self.user_tower_config.use_post_embedding, use_post_sid=self.user_tower_config.use_post_sid, ...)`,
+  `:1746-1753`). This reconfirms, from a second independent point in the file, that the
+  shipped config's `use_post_embedding=False`/`use_post_sid=True` genuinely governs the
+  item tower's inputs — it does not contradict or loosen that finding.
+
+**Verdict on the six review questions**: (1) no material change to how
+`RetrieveTopKCandidates` results are constructed — top-k selection and dataset masking
+only, as already documented; (2) no post-filtering, dedup, re-ranking, or quota logic
+found beyond what was already documented (dataset-slice masking); (3) no new model input
+contradicts `use_post_embedding=False`/`use_post_sid=True` — reconfirmed; (4) the
+similarity score's meaning is unchanged (int8 quantization is a compute optimization on
+the same dot product, not a different metric); (5) no new fact about the "home" vs
+"immersive" heads beyond the now-enumerated negative-action lists, which sharpen rather
+than revise the earlier description; (6) nothing in the tail contradicts any statement
+in this report as originally written.
+
 ## Final closure assessment
 
-**MAYBE.** After this pass, the two specifically-assigned blind spots are closed as far
-as this snapshot allows — the remaining gaps in both (live `candidate_seq_len` value;
-the offline embedding-population job) are external-configuration/external-artifact
-boundaries of the same kind this entire rapid+forensic track has repeatedly hit and
-correctly declined to guess past, not unexplored code. Three items remain that are
-*plausibly* answerable from checked-in code and were explicitly out of this pass's
-assigned scope (per the task's stop condition, not investigated here):
+**MAYBE.** After this pass (including the follow-up read of `recsys_two_tower_model.py`'s
+remaining tail, addendum above, which changed nothing), the two specifically-assigned
+blind spots are closed as far as this snapshot allows — the remaining gaps in both (live
+`candidate_seq_len` value; the offline embedding-population job) are
+external-configuration/external-artifact boundaries of the same kind this entire
+rapid+forensic track has repeatedly hit and correctly declined to guess past, not
+unexplored code. Two items remain that are *plausibly* answerable from checked-in code
+and were explicitly out of this pass's assigned scope (per the task's stop condition, not
+investigated here):
 
 1. **`BaseModelRunner`/`RankingModelRunner`'s full body in `model_runner.py`** (this pass
    read only `RetrievalModelRunner`, ~630 of the file's 4879 lines) — could show
    additional ranking-side batching/serving mechanics not visible from the Rust engine
    crate alone.
-2. **The rest of `recsys_two_tower_model.py`** (lines 1383-1761, ~380 lines this pass did
-   not read) — could contain additional serving-reply-shaping logic relevant to exactly
-   how top-k results become the `ScoredCandidates` response.
-3. **Whether any deployment/launch script or CI config in this repository names a
+2. **Whether any deployment/launch script or CI config in this repository names a
    concrete `--candidate_seq_len`/`--config_name`/`--checkpoint_path` invocation** beyond
    the generic argparse defaults and `QUICKSTART.md`'s toy example — not searched for in
    this pass beyond what Rapid 05 already covered.

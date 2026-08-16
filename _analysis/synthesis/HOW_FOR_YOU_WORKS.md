@@ -244,6 +244,36 @@ plausible reading, based on how the parameter names around it are structured, is
 of experts," but this repository never confirms that, so it should be read as an unlabeled
 alternate retrieval variant rather than a confirmed acronym.
 
+**What the retrieval-serving model itself actually does is a separate layer from the
+admission rules above, and it's worth being precise about the difference.**
+`phoenix-rankall` decides *whether a post is allowed into the retrieval corpus at all* —
+that's the admission logic just described. A different, later system decides *how to
+represent and search* whatever corpus that produces, for a specific viewer, at request
+time — and `PhoenixSource`/`PhoenixTopicsSource`/`PhoenixMOESource` are simply Home
+Mixer's three client wrappers that ask that system for candidates, not the system itself.
+This repository's own shipped reference implementation for that searching role is a
+**two-tower retriever**: one tower is a full transformer, structurally the same kind of
+model used for ranking, that reads your action history and account features and produces
+a single vector describing you; a second, much simpler tower produces a vector for each
+candidate post from its author identity and a compact "semantic ID" — not raw post
+text — in the shipped reference configuration. Both vectors are normalized to the same
+length, so comparing them with a plain dot product amounts to asking how similar their
+directions are (cosine similarity): the closer two vectors point, the more similar the
+model considers that user and that post. The model is trained so a viewer's vector moves
+closer to a post's vector specifically when that viewer favorited it; a second, broader
+head is trained on a wider set of engagement types (reply, retweet, bookmark, video
+views, and others), apparently for a different product surface. At serving time, this
+repository's own code performs the actual search — your query vector is compared against
+a large, checkpoint-loaded table of precomputed post vectors, and the closest matches are
+selected with a purpose-built top-k search implementation checked into this repository,
+not handed off to an external nearest-neighbor service. What isn't in this repository is
+the trained checkpoint itself, or the offline process that would have produced that table
+of post vectors for X's real corpus — and which specific cluster of this retrieval
+service each of the three `Phoenix*Source`s actually reaches at runtime remains unknown,
+the same boundary as the ranking side below. SimClusters, described above, is unrelated
+to this model — it's seeded from posts you recently engaged with and searched via its own,
+separately-built similarity system, not the two-tower retriever.
+
 **TweetMixerSource** calls an entirely external service this repository doesn't include
 the internals of — only the request Home Mixer sends and the shape of the response it
 gets back are visible here. It's disabled by default.
@@ -261,7 +291,8 @@ much longer than 48 hours internally, but none of that extra retention matters f
 normal feed request, because the age filter removes anything older regardless of source.
 
 *Primary evidence: Rapid 01 (all seven sources, index-admission rules); S01 (source
-wiring and merge behavior).*
+wiring and merge behavior); Final residual report `PHOENIX_SERVING_AND_RETRIEVAL.md`
+(two-tower retrieval-model architecture and serving-side search).*
 
 ---
 
@@ -328,8 +359,28 @@ actual production deployment uses — this is a statement about what the reposit
 shipped reference tooling documents as the pairing, not an independently verified claim
 about live traffic.
 
+**Separately, Phoenix's ranking service has a hard limit on how many candidates it will
+score in a single request, and this repository shows exactly how it handles going over
+that limit: it leaves the excess unscored rather than making another pass.** Home Mixer
+can pack up to 2,800 candidates into one prediction request, but the serving engine
+never splits an oversized request across multiple model calls. Instead, it keeps only
+the first candidates, in whatever order Home Mixer sent them, up to a configured
+per-request capacity — and returns no prediction at all for anything past that cutoff,
+silently, not an error and not a placeholder low score. That per-request capacity isn't
+fixed by how the model was trained; it's a setting the repository's own inference-server
+launcher can override independently at deployment time, and its checked-in launcher
+default (1,400) is already far larger than the reference training configuration's
+declared value (64) — but neither number is shown anywhere in this snapshot to be what
+production actually runs with, so the real figure is unknown. What downstream scoring
+does with a candidate that got no Phoenix prediction at all isn't established here
+either: it's a form of missing data, and whether it's treated the same as a candidate
+whose model call simply failed outright (described above) is not something this
+repository's code shows for that specific case.
+
 *Primary evidence: Rapid 02 (prediction heads, consumption); Rapid 04 and Rapid 05 (model
-architecture, config-family pairing).*
+architecture, config-family pairing); Final residual report
+`PHOENIX_SERVING_AND_RETRIEVAL.md` (per-request candidate capacity and truncation
+behavior).*
 
 ---
 

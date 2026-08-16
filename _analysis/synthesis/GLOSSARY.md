@@ -43,7 +43,12 @@ per-candidate action predictions during scoring. Distinct from Phoenix retrieval
 `PhoenixTopicsSource`, and `PhoenixMOESource` all call to pull candidates out of the index
 `phoenix-rankall` built. All three sources use this identical mechanism; they differ only
 in which index cluster they query and under what request conditions they're allowed to
-run.
+run. The repository's shipped reference implementation behind this service is a
+two-tower retriever: a transformer produces a viewer vector, a much simpler tower
+produces a post vector from author identity and a semantic ID, and normalized dot
+product (cosine similarity) selects the closest matches from a checkpoint-loaded table
+via a top-k search implemented in this repository. The production checkpoint and live
+cluster routing remain unpublished.
 
 **Thunder** — A standalone in-memory service that indexes recent posts by author and
 serves them to Home Mixer as the in-network retrieval source. No ranking model is
