@@ -40,22 +40,28 @@ history/candidate sequence construction), and both are trained at real productio
 (`total_samples=1e11` for the full `xrecsys_gen_recs` config, alongside a much smaller
 `gen_recs_nano` variant clearly meant for local testing, not production).
 
-The single most concrete resolution in this report closes a question two forensic passes
-and this rapid track both left open: does the model actually see the bidirectional-follow
-signal (`author_follows_viewer`, established all the way back in S00)? Yes — directly,
-unambiguously. `home-mixer/models/candidate.rs`'s `as_tweet_info` sets
-`AuthorInfo.is_following_user = self.author_follows_viewer`, gated to original posts only
+The single most concrete resolution in this report closes, at the request boundary, a
+question two forensic passes and this rapid track both left open: does the
+bidirectional-follow signal (`author_follows_viewer`, established all the way back in
+S00) actually reach Phoenix serving? Yes — directly, unambiguously.
+`home-mixer/models/candidate.rs`'s `as_tweet_info` sets `AuthorInfo.is_following_user =
+self.author_follows_viewer`, gated to original posts only
 (`if self.retweeted_user_id.is_none()`) — the exact same "not a retweet" condition
-`RankingScorer`'s bidirectional-follow boost already required. The model receives both
-directions of the follow relationship (`is_author_followed_by_user`, i.e. viewer→author,
-unconditionally; `is_following_user`, i.e. author→viewer, for non-retweets), plus raw
-engagement counts (favorites, retweets, quotes, replies, views, bookmarks), boolean
-content flags (has media, is retweet/quote/reply), a language code, and a compact
-`semantic_ids` field — but conspicuously *not* raw post text or a raw media embedding
-in this specific request path. The most defensible reading, though not independently
-proven by tracing the serving side, is that rich content representations are resolved
-server-side from the semantic ID rather than streamed per-request from Home Mixer — the
-wire request carries identifiers and counts, not content.
+`RankingScorer`'s bidirectional-follow boost already required. The *request* Home Mixer
+sends carries both directions of the follow relationship
+(`is_author_followed_by_user`, i.e. viewer→author, unconditionally; `is_following_user`,
+i.e. author→viewer, for non-retweets), plus raw engagement counts (favorites, retweets,
+quotes, replies, views, bookmarks), boolean content flags (has media, is
+retweet/quote/reply), a language code, and a compact `semantic_ids` field — but
+conspicuously *not* raw post text or a raw media embedding in this specific request
+path. Whether the deployed model *internally* reads `is_following_user` once the
+request lands, as opposed to it being present in the wire format but unused by a
+particular serving config, is not something this snapshot's serving/preprocessing code
+proves — that remains STRONG_INFERENCE/UNKNOWN, not DIRECT (see the model-input section
+below). The most defensible reading of the missing text/media fields, though not
+independently proven by tracing the serving side, is that rich content representations
+are resolved server-side from the semantic ID rather than streamed per-request from Home
+Mixer — the wire request carries identifiers and counts, not content.
 
 On runtime configuration, this report does not find anything that overturns the pattern
 already established three times over: `home-mixer/params/param.rs`'s own header says its
@@ -90,20 +96,29 @@ visibility filtering's policy composition are all fully reproducible from this s
 — they're compiled, checked-in, testable Rust. The Phoenix *architecture* is
 reproducible as a JAX model definition; a specific *trained checkpoint* is not — no
 weights ship in this repository, and BDSM's operating thresholds are explicitly redacted
-rather than merely absent. Production feature-switch state, VMRanker's server-side DPP
-implementation, and the complete Botmaker/Scarecrow rule corpus are all, to varying
-degrees of confirmed partiality, external to what this snapshot can prove.
+rather than merely absent. VMRanker's server-side DPP diversity-selection algorithm, by
+contrast, **is** checked into this repository (`vm-ranker/`) — an earlier pass through
+this material incorrectly described it as external or unpublished, and this report
+corrects that below. What remains genuinely outside this snapshot's reach is production
+feature-switch state, the live on/off setting and embedding data behind that published
+DPP code, and the complete Botmaker/Scarecrow rule corpus.
 
 ## Phoenix model architecture
 
-**Which model config is live**: `phoenix/xrex/configs/xrecsys_gen_recs.py` defines
-`MODEL_CFGS["xrecsys_gen_recs"]` — 8 transformer layers, `emb_size=2560`, 20 query heads
-/ 4 KV heads (grouped-query attention, `RecsysAttentionConfig`), `history_seq_len=1023`,
-`candidate_seq_len=128`, causal + rotary attention, `total_samples=1e11` — this is, by
-scale alone, the production configuration (a `gen_recs_nano` sibling config with 2 layers
-and `total_samples=1e9` is clearly a local/test variant). It trains `RecsysGenRecsModel`
-(`phoenix/xrex/models/recsys_gen_recs_model.py:114`), a subclass of the more general
-`RecsysAggregatedModel` (`phoenix/xrex/models/recsys_model.py:1325`).
+**Which model config is checked in, and what it suggests about live use**:
+`phoenix/xrex/configs/xrecsys_gen_recs.py` defines `MODEL_CFGS["xrecsys_gen_recs"]` — 8
+transformer layers, `emb_size=2560`, 20 query heads / 4 KV heads (grouped-query
+attention, `RecsysAttentionConfig`), `history_seq_len=1023`, `candidate_seq_len=128`,
+causal + rotary attention, `total_samples=1e11`. This is the **large-scale/full
+configuration** in this file, clearly distinct from its `gen_recs_nano` sibling (2
+layers, `total_samples=1e9`, explicitly local/test-shaped). Its size and sample budget
+strongly *suggest* production-scale intent — nobody trains a 100-billion-sample run for
+a demo — but this snapshot does not contain the live Phoenix cluster→model-config
+binding that would make "this exact config serves live traffic" a DIRECT claim rather
+than a plausible inference; whether `xrecsys_gen_recs` (as opposed to some other,
+possibly unpublished, config) is what's actually deployed is **UNKNOWN**. It trains
+`RecsysGenRecsModel` (`phoenix/xrex/models/recsys_gen_recs_model.py:114`), a subclass of
+the more general `RecsysAggregatedModel` (`phoenix/xrex/models/recsys_model.py:1325`).
 
 **Two structurally different objectives coexist in this codebase, and it matters which
 one Home Mixer's `RankingScorer` inputs actually come from**:
@@ -159,25 +174,30 @@ from loss-function shape.
   embedding (a user can both favorite and reply to the same historical post — this is
   not a single categorical label per history item), and continuous action features
   (`block_history_reduce`, `recsys_gen_recs_model.py:221-236`).
-  `history_seq_len=1023` (production config) bounds how much history the model attends
+  `history_seq_len=1023` (large-scale config) bounds how much history the model attends
   to.
 - **User representation**: a hashed-ID embedding (`block_user_reduce` over
   `user_hashes`), using an explicit feature-hashing scheme (`user_hash_scales`,
   `user_biases`, `user_modulus` — collision-tolerant hashing into a fixed-size table,
-  `user_vocab_size=100,000,000` in the production config) rather than one row per
+  `user_vocab_size=100,000,000` in the large-scale config) rather than one row per
   literal user ID.
 - **Candidate representation**: `project_candidates`/`block_candidate_reduce`
   (`recsys_gen_recs_model.py:364-393`) fuses post-hash, author-hash, product-surface, and
   a **multimodal embedding** (`mm_embs`, required — `"Gen recs model requires
   multimodal embeddings in candidate_seq"`, `:449`) per candidate. `candidate_seq_len=128`
-  bounds how many candidates one forward pass scores at once — notably smaller than the
-  35–50 candidates Home Mixer's own pipeline ultimately ranks, and far smaller than the
-  request-side `PHOENIX_CLIENT_MAX_CANDIDATES=2800` cap
-  (`home-mixer/util/phoenix_request.rs:11`) — the exact batching/chunking relationship
-  between a >128-candidate Home Mixer request and this 128-length model input is not
-  established from this snapshot (UNKNOWN — likely resolved server-side, not shown here).
+  bounds how many candidates one forward pass scores at once. The interesting comparison
+  is not against Home Mixer's *final* output sizes (top-50 selection, truncated to 35
+  organic results, per `02_ranking.md` — both smaller than 128, not larger) but against
+  the *input* side: Home Mixer's `PredictNextActionsRequest` can carry up to
+  `PHOENIX_CLIENT_MAX_CANDIDATES=2800` candidates
+  (`home-mixer/util/phoenix_request.rs:11`) — over 20× this model's 128-candidate
+  sequence capacity. The unresolved question is therefore how a serving request
+  carrying up to 2800 candidates gets batched or partitioned into this model's
+  128-candidate capacity (chunked into multiple forward passes, truncated, routed
+  through a different/larger serving config, or something else) — that reconciliation
+  mechanism is UNKNOWN from this snapshot, not shown server-side.
 
-**Multimodal/embedding inputs**: `mm_target_dim=1024` (production config) — candidates
+**Multimodal/embedding inputs**: `mm_target_dim=1024` (large-scale config) — candidates
 carry a 1024-dimensional multimodal embedding into the model; `recsys_embedding.py` (334
 lines, not deep-read beyond confirming its role as the shared hash-embedding-table
 module both history and candidate paths call into) implements the actual hash-table
@@ -225,16 +245,21 @@ from *somewhere*, and with the SID system's established role as a compact conten
 identifier) rather than streamed per-request in the wire proto. This snapshot does not
 contain the server-side code that would make this DIRECT.
 
-**This closes the S00/S01 bidirectional-follow model-use boundary precisely**: DIRECT,
-not inferred — `author_follows_viewer` (mutual/reciprocal follow, set by
-`BidirectionalFollowHydrator`, S00/S01) reaches the model as `AuthorInfo.is_following_user`,
-conditioned on the candidate not being a retweet — the identical eligibility condition
-`RankingScorer`'s separate, local bidirectional-follow score boost already uses
-(`02_ranking.md`, `bidirectional_boost_eligible`). The signal is therefore used **twice**,
-independently: once inside the model itself (as an input feature, presumably influencing
-every prediction head's output), and again inside `RankingScorer` (as an explicit
-post-hoc weight boost on the reply/dwell heads) — these are two separate, compounding
-uses of the same underlying relationship, not one mechanism described twice.
+**This resolves the S00/S01 bidirectional-follow question at the request boundary,
+precisely, but does not by itself prove internal model use**: DIRECT, not inferred —
+`author_follows_viewer` (mutual/reciprocal follow, set by `BidirectionalFollowHydrator`,
+S00/S01) is serialized into the Phoenix prediction *request* as
+`AuthorInfo.is_following_user`, conditioned on the candidate not being a retweet — the
+identical eligibility condition `RankingScorer`'s separate, local bidirectional-follow
+score boost already uses (`02_ranking.md`, `bidirectional_boost_eligible`). What this
+snapshot does **not** contain is the serving-side preprocessor/model code that would
+confirm the deployed model actually reads that field once the request arrives — the
+cluster→serving-preprocessor→model binding is external. So: DIRECT that the signal
+reaches Phoenix serving in the request; STRONG_INFERENCE/UNKNOWN that the deployed
+ranking model internally consumes it. `RankingScorer`'s own, entirely separate use of
+`author_follows_viewer` as an explicit post-hoc weight boost on the reply/dwell heads
+(`02_ranking.md`) remains DIRECT regardless — that is Home Mixer code read directly, not
+an inference about what happens inside the model.
 
 ## What Phoenix predicts
 
@@ -377,7 +402,7 @@ in this repository across all four rapid-track reports.
 | Ranking mode (`ValueModelMode`) | `"weighted"` | feature-switch | No | Same |
 | Action weights (favorite/reply/report/etc.) | Specific checked-in floats | feature-switch | No | Same |
 | OON factor (`OonWeightFactor`) | `0.75` | feature-switch | No | Same |
-| VMRanker/DPP (`VMRankerValueModelId`, `VMRankerDppTheta`) | `"dpp"`, `0.65` | feature-switch | No | Same; server-side DPP execution itself is external regardless |
+| VMRanker/DPP (`VMRankerValueModelId`, `VMRankerDppTheta`) | `"dpp"`, `0.65` (Home Mixer request); server `--dpp-enabled` default `false` | feature-switch (Home Mixer side); CLI flag (VMRanker server side) | No | Home Mixer's request values are mirrored defaults; the server-side DPP *algorithm* is checked-in and published (`vm-ranker/dpp.rs`), but whether the server's `--dpp-enabled` flag is set in production is unknown |
 | Ads blender internals | Not independently re-verified this pass | feature-switch (presumed) | No | Out of this macro's re-scope; established structurally in S02 |
 | Rust VF selection (`EnableXaiVfClient`) | `true` | feature-switch | No | Same pattern (`03_eligibility_labels_visibility.md`) |
 | New-user behavior thresholds | `0` (both new-user OON and Phoenix-cluster thresholds) — currently unreachable | feature-switch | No | Mechanism proven inert at default; production override state unknown |
@@ -404,7 +429,7 @@ repo shows the capability and its checked-in wiring, never a live assignment.
 |---|---|---|---|---|
 | `RetrievalDispatch`/xrecsys Phoenix retrieval | tweet-ID-free retrieval query, cluster ID, sequence, max results | ranked candidate tweet IDs | Call site, cluster resolution, retry/fallback param plumbing | Actual retrieval algorithm, index-to-live-serving connection (`01_retrieval.md`) |
 | `PredictionDispatch`/Phoenix model serving | `PredictNextActionsRequest` (this report's field map above) | per-action logits/probabilities, per-continuous-head values | Full request shape; model architecture (this report) | Which exact trained checkpoint is loaded; live cluster→config binding |
-| VMRanker server-side value model/DPP | `RankRequest` (candidate scores, phoenix_scores subset, DPP theta/max-rank, optional head weights) | per-candidate re-ranked score | Full request shape (`02_ranking.md`) | DPP kernel/similarity computation; how theta is actually applied |
+| VMRanker (separate service; DPP diversity selection) | `RankRequest` (candidate scores, phoenix_scores subset, DPP theta/max-rank, optional head weights) | per-candidate score: original (selected) or `0.0` (rejected) under DPP, or the same value echoed back if server-side DPP is disabled | Full request shape (`02_ranking.md`); **the complete DPP algorithm — scoring formula, similarity kernel, greedy selection — is checked-in Rust (`vm-ranker/dpp.rs`), not external** | Whether the server's `--dpp-enabled` flag is set in production; the live embedding store's contents |
 | Gizmoduck | user ID batch + `QueryFields` (SAFETY, LABELS, etc.) | account safety flags, user labels, `allow_for_you_recommendations` and other account fields | Consumption sites across Home Mixer/VF/Scarecrow | The write path for `allow_for_you_recommendations`; internal Gizmoduck logic entirely |
 | Social graph service | block/mute/follow relationship queries | boolean relationship flags | Consumption sites (S01, VF) | Internal implementation |
 | External ad system | (S02's territory, not re-traced this pass) | — | Blending mechanism only | Ad selection/pricing itself |
@@ -415,7 +440,10 @@ repo shows the capability and its checked-in wiring, never a live assignment.
 This table is where "the open-source algorithm stops" becomes concrete: every row's
 "Hidden" column is either a trained artifact (weights, thresholds), a live runtime value
 (cluster bindings, config state), or another service's internal implementation this
-repository documents the *interface* to but not the *behavior* of.
+repository documents the *interface* to but not the *behavior* of — with one notable
+exception: VMRanker's row is hidden only at the runtime-state layer (is DPP turned on,
+what embeddings does it see), because its actual selection *algorithm* is fully public
+in this repository, unlike every other row in this table.
 
 ## Under the Hood transparency
 
@@ -480,9 +508,10 @@ ranking.
 | A Phoenix training run | **PARTIALLY** | Architecture and training loop are real and runnable; the real dataset requires Kafka-sourced production data this repo doesn't include, though a synthetic-data path (`phoenix/reference/oss_recsys_synth.py`) exists for this exact purpose |
 | X's actual trained production model | **NO / NOT FROM SNAPSHOT** | No checkpoint ships; cluster→config binding is external; training data is external |
 | Current production feature-switch state | **NO / NOT FROM SNAPSHOT** | No live config export anywhere in this repository, confirmed by four independent rapid-track passes |
-| VMRanker's exact behavior | **NO / NOT FROM SNAPSHOT** | Request shape is fully known (`02_ranking.md`); server-side DPP/value-model implementation is not in this snapshot |
+| VMRanker implementation (the DPP algorithm itself) | **YES** | Request shape and the complete server-side DPP scoring/selection algorithm are both checked-in Rust (`vm-ranker/`), corrected from an earlier pass's claim that the server-side implementation was unpublished |
+| Production-equivalent VMRanker *behavior* | **PARTIALLY / runtime-dependent** | The algorithm reproduces exactly given the same inputs; whether the live server has `--dpp-enabled` set, and what its embedding store contains, are both unknown, so a locally-run VMRanker cannot be guaranteed to match production behavior even though its code is identical |
 | Full moderation behavior | **PARTIALLY** | VF's policy composition is fully reproducible (compiled Rust, tested); a real but explicitly partial subset of Botmaker/Scarecrow rules is reproducible; the complete rule corpus and BDSM's operating thresholds are not |
-| A production-equivalent For You feed | **NO** | Requires the untrained-in-this-repo model checkpoint, live production feature-switch state, live external service behavior (VMRanker DPP, retrieval serving), and the complete (not partial) safety-label rule corpus — no single missing piece, but the combination is definitively not reproducible from this snapshot alone |
+| A production-equivalent For You feed | **NO** | Requires the untrained-in-this-repo model checkpoint, live production feature-switch state, live runtime state for services whose *code* is public but whose *deployment configuration* is not (VMRanker's `--dpp-enabled`/embedding data, the Phoenix retrieval-serving cluster binding), and the complete (not partial) safety-label rule corpus — no single missing piece, but the combination is definitively not reproducible from this snapshot alone |
 
 ## Failure/degraded-operation pattern
 
@@ -516,9 +545,11 @@ The systemic pattern across all four rapid reports, not repeating individual tab
   being `ThunderCapiClient`'s graceful `None` degradation.
 - **Depends on external, unpublished semantics this repo cannot resolve**: Strato's
   `.fetch`/`.v` failure behavior on the legacy VF index-admission branch (the one
-  genuinely unresolved failure-mode question from `03`'s corrections); VMRanker's
-  server-side behavior on any input; the actual Phoenix model-serving cluster's behavior
-  beyond what the client-side retry/fallback code shows.
+  genuinely unresolved failure-mode question from `03`'s corrections); the actual
+  Phoenix model-serving cluster's behavior beyond what the client-side retry/fallback
+  code shows. **VMRanker is not in this category** — its server-side algorithm is
+  published; only its live `--dpp-enabled` setting and embedding-store contents are
+  unknown runtime state, not unpublished behavior.
 
 **The one surprising inconsistency worth calling out**: index-time safety
 (`shouldDropPostByVF`) and request-time RPC failures both fail open, but for different
@@ -548,6 +579,11 @@ one request.
   report).
 - Under the Hood's exact data shape and its independent corroboration of the VF findings
   (this report).
+- VMRanker's complete server-side DPP diversity-selection algorithm — scoring
+  normalization, theta-driven quality/diversity trade-off, cosine-similarity kernel
+  construction, greedy selection, and exact score-passthrough/zero-out output behavior —
+  corrected from an earlier pass's mischaracterization as external/unpublished (this
+  report).
 
 ## What remains unknowable from this snapshot
 
@@ -557,7 +593,10 @@ one request.
 - The trained weights of any production model (Phoenix, BDSM, or otherwise).
 - BDSM's real operating-point thresholds (deliberately redacted).
 - The complete Botmaker/Scarecrow rule corpus beyond the 20-rule checked-in subset.
-- VMRanker's and the Phoenix retrieval-serving cluster's internal implementations.
+- VMRanker's live `--dpp-enabled` state and embedding-store contents (its DPP
+  *algorithm* is known — `vm-ranker/dpp.rs` — only its runtime deployment state is
+  not); the Phoenix retrieval-serving cluster's internal implementation (unlike
+  VMRanker, genuinely not present in this snapshot at all).
 - What sets `Gizmoduck.allow_for_you_recommendations = false` (S01-F008, still open
   after four passes).
 - Legacy-branch (`shouldDropTweetV2`) exception-propagation semantics at index-admission
@@ -578,11 +617,20 @@ one request.
    `phoenix/xrex/models/recsys_model.py:403-416,1940-1986` (sigmoid/continuous head
    activation).
 
-2. **The S00/S01 bidirectional-follow model-use question is directly resolved:
-   `author_follows_viewer` reaches the Phoenix model as `AuthorInfo.is_following_user`,
-   gated to non-retweets — the same eligibility condition `RankingScorer`'s separate,
-   local bidirectional boost uses, meaning the signal is used twice, independently.**
-   Significance: HIGH. Evidence class: DIRECT.
+2. **The S00/S01 bidirectional-follow question is resolved at the request boundary, not
+   proven all the way into the model: `author_follows_viewer` reaches Phoenix serving in
+   the prediction request as `AuthorInfo.is_following_user`, gated to non-retweets — the
+   same eligibility condition `RankingScorer`'s separate, local bidirectional boost
+   uses.**
+   Significance: HIGH. Evidence class: DIRECT — the field is serialized into the
+   `PredictNextActionsRequest` Home Mixer sends, for non-retweet candidates.
+   STRONG_INFERENCE/UNKNOWN — that the deployed ranking model *internally consumes* that
+   field once it arrives, since the exact cluster→serving-preprocessor→model binding is
+   not published in this snapshot; this report does not claim DIRECT evidence of
+   internal model use, only of the field reaching the request. `RankingScorer`'s own,
+   separate, local use of `author_follows_viewer` (`02_ranking.md`) remains DIRECT and is
+   unaffected by this distinction — it is Home Mixer code the earlier report read
+   directly, not an inference about model internals.
    Source: `home-mixer/models/candidate.rs:202-211`.
 
 3. **Discrete engagement heads are independently-sigmoided binary probabilities from a
@@ -675,9 +723,13 @@ three prior rapid reports:
 - In-network and out-of-network content receive genuinely different eligibility and
   visibility treatment at multiple independent layers (retrieval gating, ranking's OON
   discount, VF's two-policy structure) — not one uniform "algorithm."
-- External services — VMRanker's DPP kernel, the Phoenix retrieval-serving cluster, the
-  full Botmaker/Scarecrow rule corpus — have their *request/response interfaces*
-  documented in this repository but not their *internal behavior*.
+- External services — the Phoenix retrieval-serving cluster's internal implementation,
+  the full Botmaker/Scarecrow rule corpus beyond the 20-rule checked-in subset — have
+  their *request/response interfaces* documented in this repository but not their
+  *internal behavior*. **VMRanker's DPP algorithm is the exception**: its diversity
+  *selection algorithm* is fully published (`vm-ranker/dpp.rs`); what's unknown there is
+  only whether the server has it enabled in production and what embedding data it sees —
+  the synthesis must not lump VMRanker in with the genuinely unpublished services above.
 - Cached-mode ranking reuses stale Phoenix predictions but re-runs local
   weighting/diversity logic with live parameters — it is not a frozen replay of a prior
   ranking.
@@ -723,8 +775,9 @@ and their immediate context); `under-the-hood/thrift/uth_serving.thrift` (full);
 **Mechanically searched/surveyed, not deep-read**: full directory listing of
 `under-the-hood/` (26 files); `phoenix/xrex/models/` directory listing (10 files, 2
 opened); `phoenix/xrex/configs/` directory listing (confirming `xrecsys_gen_recs.py` as
-the production-scale config by comparing sibling configs' `total_samples` values, not by
-reading every config file).
+the large-scale/full config by comparing sibling configs' `total_samples` values, not by
+reading every config file — live production use of this specific config is not
+established); `vm-ranker/` directory listing (10 files, 7 opened this pass).
 
 **Intentionally not exhaustively read**: `phoenix/xrex/models/recsys_model.py`'s
 remaining ~3,100 lines (the base model's full transformer/attention/embedding

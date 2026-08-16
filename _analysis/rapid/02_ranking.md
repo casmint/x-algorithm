@@ -60,20 +60,35 @@ checked-in default (`ValueModelMode = "weighted"`), neither activates — every 
 uses the classic weighted-sum path unless production configuration overrides that
 default, which this snapshot cannot see.
 
-**`VMRanker`** is the final stage, and it's the least self-contained: it sends the
-already-scored candidate list to an external "value model ranker" service (again with an
-optional xDS-then-DNS fallback path) along with diversity parameters (DPP theta and a max
-rank depth), and gets back a per-candidate score that — on the checked-in default value
-model (`"dpp"`) — **directly replaces** `RankingScorer`'s score, not supplements it. Under
-a different, non-default value-model setting (`"author_diversity"`, only reachable if MPN
-scoring is also on, which defaults off), VMRanker's response is instead used as a
-*multiplier* on RankingScorer's raw positive/negative parts rather than a replacement —
-two structurally different ways the same field ends up populated, gated by configuration
-this snapshot shows only the checked-in default for. If VMRanker's whole call fails,
-Home Mixer does not fail the request or blank the score — it simply skips VMRanker's
-`update()` and every candidate keeps `RankingScorer`'s score untouched. This closes S01's
-open field-level question (S01-F012) directly: yes, VMRanker overwrites, and yes, its
-failure leaves the prior stage's score exactly where it was.
+**`VMRanker`** is the final stage. It runs as a separate Rust service
+(`vm-ranker/`, whose implementation — including its DPP diversity algorithm — is
+checked into this repository, not external or unpublished, correcting an earlier
+pass through this material). Home Mixer sends it the already-scored candidate list
+(again with an optional xDS-then-DNS fallback path) along with diversity parameters
+(DPP theta and a max rank depth). Under the checked-in default value model
+(`"dpp"`), the server's DPP implementation is not a second predictive model at all —
+it's a **selection layer**: it sorts candidates by the score Home Mixer already sent,
+keeps up to a configured pool size, builds a similarity kernel from an embedding
+lookup, greedily selects a diverse top-`k` from that pool, and returns each candidate
+either with its *original, unchanged* incoming score (if selected) or a score of
+exactly `0.0` (if not selected). Home Mixer's own logic still does the same thing
+either way — the returned value **directly replaces** `RankingScorer`'s score, not
+supplements it — but under DPP mode, the "replacement" is normally either the prior
+score verbatim or zero, not an opaque model-generated number. Under a different,
+non-default value-model setting (`"author_diversity"`, only reachable if MPN scoring
+is also on, which defaults off), VMRanker's response is instead used as a
+*multiplier* on RankingScorer's raw positive/negative parts rather than a
+replacement — two structurally different ways the same field ends up populated,
+gated by configuration. If VMRanker's whole call fails, Home Mixer does not fail the
+request or blank the score — it simply skips VMRanker's `update()` and every
+candidate keeps `RankingScorer`'s score untouched. This closes S01's open
+field-level question (S01-F012) directly: yes, VMRanker overwrites, and yes, its
+failure leaves the prior stage's score exactly where it was. What remains genuinely
+external is not the algorithm but the *runtime state*: the server's DPP path is
+gated behind a `--dpp-enabled` flag whose checked-in default is `false`, and its
+similarity kernel depends on an embedding store this snapshot doesn't populate —
+so whether DPP selection actually runs in production, and against what embedding
+data, is unknown even though the code that would run it is fully public.
 
 The very last step, `TopKScoreSelector`, does nothing clever — it sorts candidates
 descending by whatever ended up in `.score` (missing scores sort last) and keeps the top
@@ -118,12 +133,14 @@ PostCandidate (from any of the 7 retrieval sources, no score field set)
     skip-if: !EnableRanking
         |
         v
-  VMRanker  (external model call; stage 3 of 3)
+  VMRanker  (separate service, checked-in DPP-selection algorithm; stage 3 of 3)
     reads:  score, phoenix_scores (subset), slate_context, weighted_score/head_weights
             (both gated behind VMRankerSendHeadWeights, default off)
-    writes: score  <- OVERWRITES (default "dpp" mode) or MULTIPLIES RankingScorer's
-                       pos/neg parts (non-default "author_diversity" + MPN mode)
-    skip-if: !EnableVMRanker
+    writes: score  <- OVERWRITES with prior score (selected) or 0.0 (rejected) under
+                       default "dpp" mode; MULTIPLIES RankingScorer's pos/neg parts
+                       under non-default "author_diversity" + MPN mode
+    skip-if: !EnableVMRanker; server-side DPP itself further gated by --dpp-enabled
+             (checked-in server default false) — disabled DPP just echoes input scores
     on whole-call failure: writes nothing -> score stays at RankingScorer's value
         |
         v
@@ -463,32 +480,87 @@ a *subset* of `phoenix_scores` (the "core" ~20 heads unconditionally; `video_ope
 `VMRankerSendHeadWeights` — the full computed `head_weights` and `weighted_score`.
 Request-level: viewer ID, following count, `value_model_id` (checked-in **`"dpp"`**),
 and `dpp_params` (`theta = 0.65`, `max_selected_rank = 150`) whenever either is nonzero
-— which they are by default, so **DPP-based diversity re-ranking is configured/requested
-by default at the VM-ranker layer** (DIRECT: this is what Home Mixer sends). Whether the
-external VMRanker service actually performs DPP re-ranking on receipt of these
-parameters, and how, is not observable from this snapshot (UNKNOWN — see below). This is
-still a separate, independently-active mechanism from `RankingScorer`'s own
-author-diversity discount, which is computed and applied entirely inside Home Mixer.
+— which they are by default, so **Home Mixer requests DPP-based diversity selection by
+default** (DIRECT: this is what Home Mixer sends). This is a separate,
+independently-active mechanism from `RankingScorer`'s own author-diversity discount,
+which is computed and applied entirely inside Home Mixer.
 
-**DPP in plain English**: a Determinantal Point Process is a way of picking a diverse
-subset from a ranked list by penalizing candidates that are too *similar* to
-higher-ranked ones already chosen (via a similarity kernel), rather than only penalizing
-literal author repeats the way `RankingScorer`'s diversity discount does. `theta`
-controls how strongly similarity is penalized; `max_selected_rank` (150) likely bounds
-how deep into the candidate pool the DPP re-ranking logic considers. **DIRECT** is limited
-to what Home Mixer sends (`value_model_id="dpp"`, `theta=0.65`, `max_selected_rank=150`);
-the actual kernel/similarity computation, and everything about how VMRanker's external
-service turns these parameters plus the candidate batch into a re-ranked score, is
-**UNKNOWN** — external to this snapshot. This repo shows only the request Home Mixer
-builds, not the service's internals or confirmation that it honors these parameters as
-named.
+**The DPP implementation is checked into this repository** (`vm-ranker/`, a standalone
+Rust gRPC service — `ranker_service.rs`, `scoring/mod.rs`, `scoring/dpp_model.rs`,
+`dpp.rs`, `main.rs`, `args.rs`, `embedding_store.rs`, all read this pass) — correcting an
+earlier pass's conclusion that VMRanker's server-side behavior was external/unpublished.
+Traced precisely, end to end:
+
+- `VMRankerServiceImpl::rank` (`ranker_service.rs:49-117`) calls `scoring::rank(req,
+  self.dpp.as_ref())`.
+- `scoring::rank` (`scoring/mod.rs:18-54`): if a `DppContext` was constructed at server
+  startup, it applies Home Mixer's `theta`/`max_selected_rank` as **overrides** onto the
+  server's own configured `DppConfig` (only if the sent value is nonzero,
+  `scoring/mod.rs:31-38`) and calls `dpp_model::rank`. **If no `DppContext` exists (DPP
+  disabled server-side), it returns each candidate's incoming score unchanged**
+  (`scoring/mod.rs:46-53`) — a pure echo, not a re-ranking of any kind.
+- `dpp_model::rank` (`scoring/dpp_model.rs:38-82,84-154`): sorts candidates by their
+  incoming score descending, keeps up to `max_selected_rank` of them (the "candidate
+  pool" DPP selects from — not necessarily every candidate Home Mixer sent), and for
+  each looks up an embedding — by `retweeted_tweet_id` for retweets, by `tweet_id`
+  otherwise — from an `EmbeddingStore`. **If no embedding is found for a candidate, the
+  code generates a random unit vector on the spot** (`random_unit_embedding`,
+  `dpp_model.rs:22-36`) and uses that as its embedding for the similarity kernel — a
+  concrete, checked-in, non-obvious behavior: candidates with a missing embedding get a
+  literally random position in similarity space, meaning diversity selection can be
+  nondeterministic per-request for exactly those candidates. This report does not know
+  the production embedding-miss rate.
+- `dpp::rescore` (`dpp.rs:35-197`, `greedy_dpp` at `:205-286`) is the actual DPP
+  algorithm: it normalizes each pooled candidate's score by the pool's top score
+  (`q = score / max_score`), applies `theta` as a quality/diversity trade-off exponent
+  (`alpha = theta / (2*(1-theta))`, `qf = exp(alpha * q)`), builds an `m×m`
+  cosine-similarity kernel from the (real or random-fallback) embeddings scaled by
+  `qf[i]*qf[j]`, and runs a **greedy DPP selection** (incremental Cholesky-based
+  determinant maximization, a standard efficient greedy-DPP implementation) to pick up
+  to `config.top_k` candidates that are jointly high-quality *and* mutually dissimilar.
+  **Selected candidates keep their original incoming score verbatim in the returned
+  `DppResult` — DPP does not compute or return a new calibrated score.** The function
+  also emits a substantial set of Prometheus metrics (pool size, embedding-miss ratio,
+  score distribution, average pairwise similarity before/after, top-k overlap with the
+  pre-DPP ranking) — real operational instrumentation for a real, exercised code path,
+  not dead code.
+- Back in `dpp_model::rank`, every candidate Home Mixer originally sent is returned:
+  selected ones keep their original score, everything else gets **`score = 0.0`**
+  (`dpp_model.rs:143-153`).
+
+**Corrected plain-English framing**: under the checked-in DPP implementation, VMRanker
+is a **diversity-aware selection layer**, not a conventional second predictive scorer —
+DPP picks a subset using Home Mixer's own incoming quality scores plus embedding
+similarity; selected candidates retain their `RankingScorer` score exactly, and rejected
+candidates are returned with score `0.0`. Home Mixer's own `update()` logic still
+directly overwrites `candidate.score` with whatever VMRanker returns (DIRECT, unchanged
+from before) — but under DPP mode, that overwritten value is normally either the prior
+score verbatim or zero, not an opaque model-generated replacement.
+
+**What is genuinely still unknown is runtime state, not the algorithm**:
+`vm-ranker/args.rs` defines `--dpp-enabled` with a checked-in default of **`false`**, and
+`main.rs` only constructs a `DppContext` (and only then attempts to preload/init an
+`EmbeddingStore`) when that flag is set (`main.rs:23-44`). DIRECT: the full DPP
+implementation is published; Home Mixer's checked-in defaults request
+`value_model_id="dpp"` with `theta=0.65`/`max_selected_rank=150`; if the server has DPP
+enabled, those request values override its own configured `theta`/`max_selected_rank`
+(but **not** `top_k`, which `RankRequest`'s `DppParams` has no field for — the server's
+own `--dpp-top-k` default, `50`, is not overridable from Home Mixer's request at all).
+DIRECT: if server-side DPP is disabled, `scoring::rank` echoes input scores unchanged,
+making the whole mechanism a no-op regardless of what Home Mixer requests. UNKNOWN:
+the actual production `--dpp-enabled` state, the live VMRanker deployment's CLI/config,
+and the live embedding store's contents — none of which this snapshot publishes.
 
 **How the returned score is used** — two distinct paths depending on configuration
 (`vm_ranker.rs:75-100`):
 - **Checked-in default path** (`fold_weights` is `None`, because `EnableMpnScoring`
   defaults off): the VM-returned score for a tweet ID, if present, **replaces**
   `c.score` outright (`returned.or(c.score)` — if VMRanker didn't return a score for
-  that tweet at all, the prior `.score` is kept as a fallback, not zeroed).
+  that tweet at all, the prior `.score` is kept as a fallback, not zeroed). Under DPP
+  mode specifically, "if present" is essentially always true (every input candidate gets
+  a returned row, per `dpp_model.rs:143-153`), so this fallback path is mostly moot for
+  DPP; it matters more for the disabled/echo path only if the server drops a candidate
+  entirely, which the code as read does not do.
 - **Non-default "fold" path** (only when `EnableMpnScoring` is on **and**
   `VMRankerValueModelId == "author_diversity"`, i.e. not the checked-in
   `"dpp"` default): the returned score is instead treated as a ratio
@@ -499,7 +571,12 @@ named.
   on RankingScorer's math, not a direct replacement. **In this fold path,
   `AuthorColdStart::apply` runs a second time** (`vm_ranker.rs:102-110`) on top of the
   already-VM-adjusted scores — meaning cold-start promotion can, in principle, be
-  applied twice across the pipeline under this non-default configuration.
+  applied twice across the pipeline under this non-default configuration. Note this
+  `"author_diversity"` value-model path is architecturally distinct from the DPP service
+  path just described — this snapshot does not show a value-model implementation by
+  that name inside `vm-ranker/`, only the `"dpp"` one; the fold-path's *own* re-ranking
+  content, if any, beyond the client-side arithmetic Home Mixer performs on the returned
+  ratio, remains unestablished.
 
 **xDS → DNS fallback**: if an xDS client was configured and the
 `enable_vm_ranker_xds_traffic` decider gate is on for this cluster, xDS is tried first;
@@ -554,7 +631,7 @@ bodies and `RankingScorer::score`'s internal branches:
 - **`VMRanker`**: `enable()` checks only `EnableVMRanker` (checked-in **true**) — also
   **runs regardless of `has_cached_posts`**, sending the freshly-recomputed `.score`
   (and, if `VMRankerSendHeadWeights` were on, freshly-recomputed head weights) to the
-  external VM ranker service exactly as on a live request.
+  separate VM Ranker service exactly as on a live request.
 
 **Precise plain-English conclusion**: a cached (`has_cached_posts`) response skips live
 retrieval (retrieval report) and skips a fresh Phoenix *model inference call* — but it
@@ -706,20 +783,24 @@ S17 census.
    on the magnitude of the diversity/OON multipliers and on what VMRanker returns for
    it — not independently traced end-to-end for a concrete example in this macro.
 
-8. **DPP-based diversity re-ranking is configured/requested at the VMRanker layer by
-   default, independently of `RankingScorer`'s own author-diversity discount — two
-   distinct diversity mechanisms are both active in the checked-in request path, one
-   fully local and one dependent on an external service actually honoring what's sent.**
+8. **DPP-based diversity selection is requested at the VMRanker layer by default,
+   independently of `RankingScorer`'s own author-diversity discount — two distinct
+   diversity mechanisms are both active in the checked-in request path. Both are now
+   fully traceable: the DPP algorithm itself is checked-in Rust
+   (`vm-ranker/dpp.rs`/`scoring/dpp_model.rs`), not external. The only unknown is
+   whether the server's `--dpp-enabled` flag (checked-in default `false`) is set in
+   production.**
    Significance: MEDIUM. Evidence class: DIRECT (that Home Mixer sends nonzero DPP
-   params by default, and that `RankingScorer`'s local diversity discount runs
-   independently); UNKNOWN (whether/how VMRanker's external service performs DPP
-   re-ranking on receipt of these parameters — its kernel/similarity computation is not
-   in this snapshot).
+   params by default; that `RankingScorer`'s local diversity discount runs
+   independently; that the full greedy-DPP selection algorithm, its scoring formula,
+   and its score-passthrough/zero-out output behavior are all checked-in and read this
+   pass). UNKNOWN: live `--dpp-enabled` state and live embedding-store contents.
    Claim: `EnableAuthorDiversity = true` (RankingScorer-side, fully local and directly
-   observed) and `VMRankerDppTheta = 0.65` (nonzero, sent to the external VMRanker
-   service by default) are both checked-in defaults, and neither gates the other.
+   observed) and `VMRankerDppTheta = 0.65` (nonzero, sent to the VMRanker service by
+   default) are both checked-in defaults, and neither gates the other.
    Source: `home-mixer/params/param.rs` (`EnableAuthorDiversity`, `VMRankerDppTheta`),
-   `home-mixer/scorers/vm_ranker.rs:206-216`.
+   `home-mixer/scorers/vm_ranker.rs:206-216`, `vm-ranker/dpp.rs:35-197`,
+   `vm-ranker/args.rs:15-16`, `vm-ranker/main.rs:23-44`.
 
 9. **`RankingScorer`'s negative-weight offset formula compresses net-negative candidates
    toward zero rather than leaving them deeply negative — a normalization step with no
@@ -743,9 +824,11 @@ S17 census.
   report lists only fields this repo's own consuming code was observed to read.
 - `RetrievalDispatch`/`PredictionDispatch`'s exact internal retry/fallback mechanics —
   external crate, same boundary already noted in the retrieval report.
-- VMRanker's actual DPP kernel/similarity computation and how `theta`/
-  `max_selected_rank` translate into re-ranked scores server-side — external service,
-  not in this snapshot.
+- The live `--dpp-enabled` state of the production VMRanker deployment, and the
+  contents of its embedding store — the DPP kernel/similarity computation itself is
+  now fully traced (`vm-ranker/dpp.rs`), correcting an earlier pass's claim that it was
+  external/unpublished; what remains unknown is purely runtime deployment state, not
+  the algorithm.
 - Production values for every parameter in the "Checked-in defaults" table — consistent
   with every prior pass, these are checked-in source defaults only.
 - Exact tie-breaking behavior in `TopKScoreSelector`'s sort for candidates with
@@ -792,7 +875,9 @@ L912-1708 used to verify specific behaviors, not read as spec line-by-line),
 ranking-relevant `param!` declaration cross-referenced against the scorers' actual
 `params.get(...)` calls) and `home-mixer/params/config.rs` (`NEW_USER_OON_WEIGHT_FACTOR`,
 `NEW_USER_MIN_FOLLOWING`, `NEGATIVE_SCORES_OFFSET`, `TOP_K_CANDIDATES_TO_SELECT`,
-`RESULT_SIZE`).
+`RESULT_SIZE`); **`vm-ranker/{ranker_service,scoring/mod,scoring/dpp_model,dpp,main,args}.rs`
+in full, this pass** — the server-side DPP implementation, previously mischaracterized
+as external/unpublished.
 
 **Mechanically searched/surveyed, not deep-read**: `home-mixer/util/phoenix_request.rs`
 (request-builder call site confirmed, internal field-by-field construction not traced);
