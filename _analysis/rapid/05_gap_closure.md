@@ -428,9 +428,11 @@ five reports (S01, S02, Rapid 01-05):
 | 24 | Is there a single global on/off switch for the whole recommendation algorithm? | UNANSWERED — no such kill-switch was found or looked for across any pass (individual scorer/source kill-switches exist, e.g. `PHOENIX_RANKER_KILL_SWITCH_DECIDER`, but no single one covering everything) | No — would require a targeted new search with low expected payoff; not attempted |
 | 25 | Does the order candidates are retrieved in (Thunder first, Phoenix second, etc.) matter for the final feed? | ANSWERED no — merge is simple concatenation, scoring alone determines order (`01_retrieval.md`) | — |
 
-23 ANSWERED, 4 PARTIALLY ANSWERED (5, 14/16 treated as one class, 22, 23), 1 UNANSWERED
-(24) — none of the partial/unanswered items are recommended for a further pass; each has
-an explicit reason above.
+21 ANSWERED, 3 PARTIALLY ANSWERED (#5, #22, #23), 1 UNANSWERED (#24) — questions #14 and
+#16 are marked ANSWERED in the table above (their unresolved point is a live production
+value, not the question itself) and are counted as ANSWERED here, not PARTIAL. None of
+the partial/unanswered items are recommended for a further pass; each has an explicit
+reason above.
 
 ## Remaining genuine unknowns
 
